@@ -13,12 +13,12 @@ export default async function Share({ params }: { params: Promise<{ token: strin
   const db = admin();
   const { data: sh } = await db.from("calendar_shares").select("*").eq("token", token).maybeSingle();
   if (!sh) notFound();
-  const { data: ws } = await db.from("workspaces").select("name").eq("id", sh.workspace_id).single();
+  const { data: ws } = await db.from("workspaces").select("name,brand_color,logo_url").eq("id", sh.workspace_id).single();
   const { data: posts } = await db.from("content_posts").select("*").eq("workspace_id", sh.workspace_id).eq("client", sh.client).neq("status", "draft").order("scheduled_at");
   const when = (d: string) => new Date(d).toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const waiting = (posts ?? []).filter((p) => p.status === "awaiting_approval" || p.status === "changes_requested").length;
   return (
-    <ClientShell width="lg" footer={<>Prepared by {ws?.name}. This is a private link, please do not share it.</>}>
+    <ClientShell width="lg" brand={{ name: ws?.name, color: ws?.brand_color, logo: ws?.logo_url }} footer={<>Prepared by {ws?.name}. This is a private link, please do not share it.</>}>
       <p className="eyebrow mb-2">Content calendar</p>
       <h1 className="font-display text-[40px] leading-[1.05] tracking-tight text-ink">{sh.client}</h1>
       <p className="mb-8 mt-2 text-[14px] text-muted">Prepared by {ws?.name}. Approve each post or tell us what to change.{waiting > 0 && <> <b className="font-semibold text-ink">{waiting} waiting for you.</b></>}</p>

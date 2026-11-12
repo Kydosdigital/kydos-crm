@@ -3,6 +3,7 @@ import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { moveOpportunity } from "../../actions";
 import { ArrowRight, KanbanSquare } from "lucide-react";
+import { PipelineDnd } from "@/components/shell/pipeline-dnd";
 import { Avatar, EmptyState, Page, PageHeader, personName } from "@/components/ui";
 
 export default async function Pipeline() {
@@ -21,7 +22,7 @@ export default async function Pipeline() {
     <Page width="full">
       <PageHeader
         title="Pipeline"
-        description="Every opportunity by stage. Use the stage menu on a card to move it along."
+        description="Every opportunity by stage. Drag a card to another stage, or use the stage menu on the card."
         actions={<div className="flex items-center gap-5 text-right">
           <div><div className="eyebrow">Opportunities</div><div className="tabular text-lg font-semibold leading-tight text-ink">{(opps ?? []).length}</div></div>
           <div className="h-8 w-px bg-line" aria-hidden />
@@ -29,12 +30,12 @@ export default async function Pipeline() {
         </div>}
       />
       {(stages ?? []).length === 0 && <div className="card"><EmptyState icon={KanbanSquare} title="No pipeline stages yet">Stages appear here once they are set up for this business.</EmptyState></div>}
-      <div className="-mx-8 flex gap-3 overflow-x-auto px-8 pb-4">
+      <PipelineDnd>
         {(stages ?? []).map((st, si) => {
           const items = (opps ?? []).filter((o) => o.stage_id === st.id);
           const total = items.reduce((n, o) => n + Number(o.value), 0);
           return (
-            <div key={st.id} className="flex w-[290px] shrink-0 flex-col rounded-[14px] border border-line bg-subtle/60 p-2">
+            <div key={st.id} data-stage={st.id} className="flex w-[290px] shrink-0 flex-col rounded-[14px] border border-line bg-subtle/60 p-2">
               <div className="flex items-center justify-between gap-2 px-2 pb-2.5 pt-1.5">
                 <span className="flex min-w-0 items-center gap-2 text-[13px] font-semibold text-ink"><span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${DOTS[si % DOTS.length]}`} /><span className="truncate">{st.name}</span><span className="rounded-full bg-surface px-1.5 text-[11px] font-medium text-muted shadow-xs">{items.length}</span></span>
                 <span className="tabular shrink-0 text-xs font-medium text-muted">{gbp.format(total)}</span>
@@ -43,7 +44,7 @@ export default async function Pipeline() {
                 {items.map((o) => {
                   const c = o.contacts as { first_name: string | null; last_name: string | null; email: string | null } | null;
                   return (
-                    <div key={o.id} className="card p-3 transition-shadow hover:shadow-md">
+                    <div key={o.id} data-opp={o.id} draggable className="card cursor-grab p-3 transition-shadow hover:shadow-md">
                       <div className="flex items-start justify-between gap-2">
                         <Link href={`/contacts/${o.contact_id}`} className="link-quiet text-[13px] leading-snug">{o.title}</Link>
                         <span className="tabular shrink-0 text-[13px] font-semibold text-ink">{gbp.format(Number(o.value))}</span>
@@ -62,7 +63,7 @@ export default async function Pipeline() {
             </div>
           );
         })}
-      </div>
+      </PipelineDnd>
     </Page>
   );
 }

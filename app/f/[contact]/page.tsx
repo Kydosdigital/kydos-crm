@@ -24,8 +24,15 @@ export default async function Feedback({ params, searchParams }: { params: Promi
   const { contact } = await params;
   const { t, sent } = await searchParams;
   const ok = !!t && verifyUnsubToken(contact, t);
+  let brand: { name: string; color: string | null; logo: string | null } | undefined;
+  if (ok) {
+    const adb = supabaseAdmin();
+    const { data: c } = await adb.from("contacts").select("workspace_id").eq("id", contact).maybeSingle();
+    const { data: w } = c ? await adb.from("workspaces").select("name,brand_color,logo_url").eq("id", c.workspace_id).maybeSingle() : { data: null };
+    if (w) brand = { name: w.name, color: w.brand_color, logo: w.logo_url };
+  }
   return (
-    <ClientShell width="sm" center>
+    <ClientShell width="sm" center brand={brand}>
       {!ok ? (
         <ResultCard tone="neutral" icon={<LinkIcon aria-hidden />} title="This link is not valid">Please use the link from the most recent email we sent you.</ResultCard>
       ) : sent ? (

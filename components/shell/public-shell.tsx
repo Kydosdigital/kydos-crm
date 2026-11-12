@@ -52,11 +52,23 @@ export function PublicHeading({ title, children }: { title: ReactNode; children?
 }
 
 /** Calm paper ground for client-facing pages: forms, proposals, calendar approvals, payment results. */
-export function ClientShell({ children, width = "md", footer, center }: { children: ReactNode; width?: "sm" | "md" | "lg"; footer?: ReactNode; center?: boolean }) {
+export type ClientBrand = { name?: string | null; color?: string | null; logo?: string | null };
+export const brandVars = (b?: ClientBrand): React.CSSProperties | undefined =>
+  b?.color && /^#[0-9a-fA-F]{6}$/.test(b.color) ? ({ "--brand": b.color, "--brand-hover": b.color, "--brand-text": b.color } as React.CSSProperties) : undefined;
+
+export function ClientShell({ children, width = "md", footer, center, brand }: { children: ReactNode; width?: "sm" | "md" | "lg"; footer?: ReactNode; center?: boolean; brand?: ClientBrand }) {
   return (
-    <div data-theme="light" className="relative flex min-h-screen flex-col bg-canvas text-ink">
+    <div data-theme="light" style={brandVars(brand)} className="relative flex min-h-screen flex-col bg-canvas text-ink">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[linear-gradient(to_bottom,rgba(14,90,72,0.07),transparent)]" />
       <main className={`relative mx-auto flex w-full flex-1 flex-col px-4 py-10 sm:py-14 ${width === "sm" ? "max-w-md" : width === "lg" ? "max-w-3xl" : "max-w-xl"} ${center ? "justify-center" : ""}`}>
+        {(brand?.logo || brand?.name) && (
+          <div className="mb-6 flex justify-center">
+            {brand.logo
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={brand.logo} alt={brand.name ?? ""} className="max-h-12" />
+              : <span className="text-lg font-semibold tracking-tight text-ink">{brand.name}</span>}
+          </div>
+        )}
         <div className="animate-rise">{children}</div>
       </main>
       <footer className="relative px-4 pb-8 text-center text-xs text-muted">{footer}</footer>
