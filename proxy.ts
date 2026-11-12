@@ -23,6 +23,11 @@ export async function proxy(request: NextRequest) {
   if (!data.user && !["/login", "/signup"].some((p) => request.nextUrl.pathname.startsWith(p))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+  if (data.user && !["/login", "/signup"].some((p) => request.nextUrl.pathname.startsWith(p))) {
+    // Accounts with two-factor on must finish the code step before they reach anything else.
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") return NextResponse.redirect(new URL("/auth/mfa", request.url));
+  }
   return response;
 }
 

@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <SidebarNav counts={counts} hidden={hidden} />
         </div>
         <div className="flex items-center justify-between border-t border-side-line px-3 py-2.5">
-          {email && <div className="mr-2 min-w-0 flex-1 leading-tight"><div className="truncate text-[12px] font-medium text-side-ink">{email}</div><div className="text-[11px] capitalize text-side-muted">{role}</div></div>}
+          {email && <a href="/account" title="Your account and two-factor sign-in" className="mr-2 min-w-0 flex-1 rounded-md leading-tight hover:bg-side-hover"><div className="truncate text-[12px] font-medium text-side-ink">{email}</div><div className="text-[11px] capitalize text-side-muted">{role}</div></a>}
           <form action={logout}>
             <button className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] font-medium text-side-muted transition-colors hover:bg-side-hover hover:text-side-ink">
               <LogOut className="h-4 w-4" aria-hidden /><span className="sr-only">Sign out</span>
