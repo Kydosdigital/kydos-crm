@@ -5,7 +5,7 @@ import { fireTrigger } from "@/lib/automation";
 
 // Generic authenticated lead intake for Zapier, Make, Google Ads lead forms etc.
 // POST JSON with header "Authorization: Bearer <INBOUND_API_KEY>":
-// { first_name, last_name, email, phone, company, source, tags: [], custom: {}, consent_note }
+// { first_name, last_name, email, phone, company, source, utm_source, utm_medium, utm_campaign, fbclid, gclid, tags: [], custom: {}, consent_note }
 // Workspace is chosen by INBOUND_WORKSPACE_SLUG (default kydos-digital). Existing contacts (same email or phone) are updated, never duplicated.
 export async function POST(req: Request) {
   const key = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -34,7 +34,8 @@ export async function POST(req: Request) {
   if (!id) {
     const { data } = await db.from("contacts").insert({
       workspace_id: ws.id, first_name: str("first_name"), last_name: str("last_name"), email, phone, company: str("company"),
-      source: str("source") ?? "api", tags, custom, consent_note: str("consent_note") ?? "Submitted via inbound API",
+      source: str("source") ?? "api", tags, custom,
+      ...Object.fromEntries(["utm_source", "utm_medium", "utm_campaign", "utm_content", "fbclid", "gclid", "landing_url"].map((k) => [k, str(k)]).filter(([, v]) => v)), consent_note: str("consent_note") ?? "Submitted via inbound API",
     }).select("id").single();
     id = data?.id;
   } else {

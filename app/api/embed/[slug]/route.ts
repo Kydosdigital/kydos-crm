@@ -16,7 +16,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ slug: string }>
   const js = `(function(){
 var SRC=${JSON.stringify(src)},KEY="kydos_form_${slug}",EXIT=${f.exit_intent ? "true" : "false"},DELAY=${f.popup_delay_seconds * 1000};
 var me=document.currentScript,inline=me&&me.getAttribute("data-inline");
-function frame(h){var i=document.createElement("iframe");i.src=SRC;i.style.cssText="border:0;width:100%;height:"+h+";background:#fff";return i;}
+function frame(h){var i=document.createElement("iframe");i.src=SRC+"&lp="+encodeURIComponent(location.href);i.style.cssText="border:0;width:100%;height:"+h+";background:#fff";return i;}
 if(inline){var t=document.querySelector(inline);if(t)t.appendChild(frame("460px"));return;}
 try{if(sessionStorage.getItem(KEY)||localStorage.getItem(KEY+"_done"))return;}catch(e){}
 var shown=false;

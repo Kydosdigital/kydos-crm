@@ -16,6 +16,7 @@ const schema = z.object({
   consent: z.boolean().optional(),         // tick-box on your form; stored as consent evidence
   custom: z.record(z.string(), z.string()).optional(), // extra fields from hosted forms
   page: z.string().optional(),
+  attribution: z.record(z.string(), z.string()).optional(), // utm_*, fbclid, gclid, landing_url
 });
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type" };
@@ -39,6 +40,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   q = f.email ? q.ilike("email", f.email) : q.eq("phone", phone!);
   const { data: existing } = await q.maybeSingle();
 
+  const at = f.attribution ?? {};
+  const attr = Object.fromEntries(["utm_source", "utm_medium", "utm_campaign", "utm_content", "fbclid", "gclid", "landing_url"].filter((k) => at[k]).map((k) => [k, at[k].slice(0, 500)]));
   let contactId = existing?.id as string | undefined;
   const isNew = !contactId;
   if (!contactId) {
@@ -52,6 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
         phone,
         company: f.company,
         source: `form:${slug}`,
+        ...attr,
         tags: Array.from(new Set([`form-${slug}`, ...(hf?.tags ?? [])])),
         custom: f.custom ?? {},
         consent_note: f.consent ? `Ticked consent on form "${slug}" at ${new Date().toISOString()}` : null,

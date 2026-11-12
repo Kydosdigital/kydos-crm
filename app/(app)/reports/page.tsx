@@ -1,6 +1,6 @@
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { CalendarCheck, Clock, Trophy, UserPlus, UserX } from "lucide-react";
+import { PoundSterling, CalendarCheck, Clock, Trophy, UserPlus, UserX } from "lucide-react";
 import { Badge, Card, CardTitle, Meter, Page, PageHeader, Segmented, Stat, TableCard } from "@/components/ui";
 
 const ago = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
@@ -14,12 +14,14 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const days = Math.min(365, Math.max(7, Number((await searchParams).days) || 30));
   const db = await supabaseServer();
   const since = ago(days);
-  const [{ data: contacts }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }] = await Promise.all([
+  const [{ data: contacts }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }, { data: allContacts }, { data: paidInv }] = await Promise.all([
     db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", since).limit(10000),
     db.from("opportunities").select("id,value,status,stage_id,created_at,closed_at,contact_id").eq("workspace_id", ws.id).limit(10000),
     db.from("stages").select("id,name,position").eq("workspace_id", ws.id).order("position"),
     db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("created_at", ago(90)).limit(10000),
     db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", since).order("created_at").limit(20000),
+    db.from("contacts").select("id,source,utm_source,utm_medium,fbclid,gclid").eq("workspace_id", ws.id).limit(20000),
+    db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).limit(10000),
   ]);
 
   // Lead sources
@@ -36,6 +38,17 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   }
   const sources = [...src.entries()].sort((a, b) => b[1].leads - a[1].leads);
   const maxLeads = Math.max(1, ...sources.map(([, v]) => v.leads));
+
+  // Revenue by source (won deals closed and invoices paid in the period, credited to the contact's first-touch source)
+  const label = (c: { source: string | null; utm_source: string | null; utm_medium: string | null; fbclid: string | null; gclid: string | null }) =>
+    c.utm_source ? `${c.utm_source}${c.utm_medium ? " / " + c.utm_medium : ""}` : c.fbclid ? "facebook / paid" : c.gclid ? "google / paid" : c.source ?? "unknown";
+  const byId = new Map((allContacts ?? []).map((c) => [c.id, label(c)]));
+  const rev = new Map<string, { deals: number; won: number; paid: number }>();
+  const bump = (cid: string) => { const k = byId.get(cid) ?? "unknown"; const r = rev.get(k) ?? { deals: 0, won: 0, paid: 0 }; rev.set(k, r); return r; };
+  for (const o of opps ?? []) if (o.status === "won" && (o.closed_at ?? o.created_at) >= since) { const r = bump(o.contact_id); r.deals++; r.won += Number(o.value); }
+  for (const i of paidInv ?? []) bump(i.contact_id).paid += Number(i.amount_gbp);
+  const revenue = [...rev.entries()].map(([k, v]) => ({ k, ...v, total: v.won + v.paid })).filter((r) => r.total > 0).sort((a, b) => b.total - a.total);
+  const maxRev = Math.max(1, ...revenue.map((r) => r.total));
 
   // Speed to first reply
   const first = new Map<string, string>();
@@ -80,6 +93,14 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <table className="table"><thead><tr><th>Source</th><th className="w-2/5">Leads</th><th>Booked</th><th className="num">Won</th></tr></thead><tbody>
           {sources.map(([k, v]) => <tr key={k}><td className="font-medium text-ink">{k}</td><td><div className="flex items-center gap-3"><Bar v={v.leads} max={maxLeads} /><span className="tabular w-8 shrink-0 text-right font-medium text-ink">{v.leads}</span></div></td><td className="tabular">{v.booked} <span className="text-muted">({v.leads ? Math.round((v.booked / v.leads) * 100) : 0}%)</span></td><td className="num">{v.won}</td></tr>)}
           {!sources.length && <tr><td colSpan={4} className="!py-8 text-center text-muted">No leads in this period.</td></tr>}
+        </tbody></table>
+      </TableCard>
+
+      <TableCard className="mb-6">
+        <div className="px-5 pb-1 pt-4"><CardTitle icon={PoundSterling}>Revenue by source</CardTitle></div>
+        <table className="table"><thead><tr><th>Source</th><th className="w-2/5">Revenue</th><th>Won deals</th><th className="num">Paid invoices</th></tr></thead><tbody>
+          {revenue.map((r) => <tr key={r.k}><td className="font-medium text-ink">{r.k}</td><td><div className="flex items-center gap-3"><Bar v={r.total} max={maxRev} /><span className="tabular w-20 shrink-0 text-right font-medium text-ink">{gbp(r.total)}</span></div></td><td className="tabular">{r.deals} <span className="text-muted">({gbp(r.won)})</span></td><td className="num">{gbp(r.paid)}</td></tr>)}
+          {!revenue.length && <tr><td colSpan={4} className="!py-8 text-center text-muted">No won deals or paid invoices in this period. Add UTM tags to your ad links to see which campaign earned what.</td></tr>}
         </tbody></table>
       </TableCard>
 

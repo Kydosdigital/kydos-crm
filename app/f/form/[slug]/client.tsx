@@ -5,6 +5,20 @@ type Field = { key: string; label: string; type: string; required?: boolean };
 type Form = { headline: string; intro: string | null; button: string; success: string; consent: string; fields: Field[] };
 const CORE = ["first_name", "last_name", "email", "phone", "company"];
 
+const ATTR = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "fbclid", "gclid"];
+/** Reads campaign tags from this page's address and, inside the embed, from the page it sits on (passed as ?lp=). */
+function attribution() {
+  const out: Record<string, string> = {};
+  try {
+    const here = new URLSearchParams(window.location.search);
+    const lp = here.get("lp");
+    const there = lp ? new URL(lp).searchParams : new URLSearchParams();
+    for (const k of ATTR) { const v = here.get(k) || there.get(k); if (v) out[k] = v.slice(0, 200); }
+    out.landing_url = (lp || window.location.href).slice(0, 500);
+  } catch { /* ignore */ }
+  return out;
+}
+
 export default function FormClient({ slug, workspace, form, embed }: { slug: string; workspace: string; form: Form; embed: boolean }) {
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [err, setErr] = useState("");
@@ -12,7 +26,7 @@ export default function FormClient({ slug, workspace, form, embed }: { slug: str
     e.preventDefault();
     setState("sending");
     const fd = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = { workspace, consent: fd.get("consent") === "on", custom: {}, page: document.referrer || undefined };
+    const body: Record<string, unknown> = { workspace, consent: fd.get("consent") === "on", custom: {}, page: document.referrer || undefined, attribution: attribution() };
     for (const f of form.fields) {
       const v = String(fd.get(f.key) ?? "").trim();
       if (!v) continue;
