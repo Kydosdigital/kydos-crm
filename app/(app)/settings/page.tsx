@@ -22,6 +22,11 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <input name="notify_email" defaultValue={active.notify_email ?? ""} placeholder="Alert email for internal notifications and failures, e.g. you@kydosdigital.com" className="rounded border p-2" />
             <input name="booking_link" defaultValue={active.booking_link ?? ""} placeholder="Booking link (Cal.com) used in follow-ups and no-show emails" className="rounded border p-2" />
             <input name="review_link" defaultValue={active.review_link ?? ""} placeholder="Google review link used in review requests" className="rounded border p-2" />
+            <input name="meta_dataset_id" defaultValue={active.meta_dataset_id ?? ""} placeholder="Meta dataset (pixel) ID for Conversions API, optional" className="rounded border p-2" />
+            <input name="call_number" defaultValue={active.call_number ?? ""} placeholder="Twilio voice number for calls, e.g. +447..." className="rounded border p-2" />
+            <input name="call_forward_number" defaultValue={active.call_forward_number ?? ""} placeholder="Your mobile: incoming calls ring here first, missed ones get a WhatsApp" className="rounded border p-2" />
+            <input name="missed_call_template" defaultValue={active.missed_call_template ?? ""} placeholder="Approved WhatsApp template sent after a missed call (uses {{1}} = first name)" className="rounded border p-2" />
+            <input name="missed_call_text" defaultValue={active.missed_call_text ?? ""} placeholder="Missed-call message if the 24h WhatsApp window is open" className="rounded border p-2" />
             <input name="business_address" defaultValue={active.business_address ?? ""} placeholder="Postal address for email footers (required for compliance)" className="rounded border p-2" />
             <button className="self-start rounded bg-black px-4 py-2 text-white">Save</button>
           </form>
@@ -33,6 +38,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
           <h2 className="mb-1 font-semibold">Connect your tools</h2>
           <ul className="mb-8 list-disc pl-5 text-sm text-gray-700">
+            <li>Twilio voice webhook (set on your call number, A call comes in, HTTP POST): <code>{url}/api/webhooks/twilio-voice</code></li>
             <li>Twilio inbound + status webhook: <code>{url}/api/webhooks/twilio</code></li>
             <li>Resend webhook: <code>{url}/api/webhooks/resend</code></li>
             <li>Cal.com webhook: <code>{url}/api/webhooks/calcom?ws={active.slug}</code> (events: booking created, cancelled; secret = CALCOM_WEBHOOK_SECRET)</li>

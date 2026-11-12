@@ -4,11 +4,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { supabaseServer } from "@/lib/supabase/server";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireWorkspace, requireAdmin } from "@/lib/workspace";
 import { sendEmail, sendSms, toE164, render } from "@/lib/messaging";
 import { sendFromOutlook } from "@/lib/outlook";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fireTrigger } from "@/lib/automation";
+import { sendMetaEvent } from "@/lib/capi";
+import { logActivity } from "@/lib/log";
 
 const s = (fd: FormData, k: string) => (String(fd.get(k) ?? "").trim() || null);
 
@@ -41,7 +43,7 @@ export async function switchWorkspace(fd: FormData) {
 }
 
 export async function updateSettings(fd: FormData) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const db = await supabaseServer();
   await db
     .from("workspaces")
@@ -54,6 +56,11 @@ export async function updateSettings(fd: FormData) {
       notify_email: s(fd, "notify_email"),
       booking_link: s(fd, "booking_link"),
       review_link: s(fd, "review_link"),
+      meta_dataset_id: s(fd, "meta_dataset_id"),
+      call_number: s(fd, "call_number"),
+      call_forward_number: s(fd, "call_forward_number"),
+      missed_call_template: s(fd, "missed_call_template"),
+      missed_call_text: s(fd, "missed_call_text"),
     })
     .eq("id", ws.id);
   revalidatePath("/settings");
@@ -126,14 +133,16 @@ export async function sendMessage(fd: FormData) {
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
   const id = String(fd.get("contact_id"));
-  const channel = String(fd.get("channel")) as "sms" | "email" | "whatsapp" | "outlook";
+  const channel = String(fd.get("channel")) as "sms" | "email" | "whatsapp" | "outlook" | "messenger" | "instagram";
   const body = s(fd, "body");
   if (!body) return;
   const { data: c } = await db.from("contacts").select("*").eq("id", id).single();
   if (!c) return;
   if (channel === "outlook") await sendFromOutlook(ws, c, s(fd, "subject") ?? `Message from ${ws.name}`, body);
   else if (channel === "email") await sendEmail(ws, c, s(fd, "subject") ?? `Message from ${ws.name}`, body);
+  else if (channel === "messenger" || channel === "instagram") await (await import("@/lib/social")).sendSocialDM(ws.id, c, channel, body);
   else await sendSms(ws, c, body, channel);
+  await logActivity(ws.id, "user", `sent ${channel}`, "contact", id);
   revalidatePath(`/contacts/${id}`);
   revalidatePath("/inbox");
 }
@@ -162,8 +171,12 @@ export async function moveOpportunity(fd: FormData) {
   const oppId = String(fd.get("id"));
   const { data: stage } = await db.from("stages").select("name").eq("id", stageId).single();
   const status = stage?.name === "Won" ? "won" : stage?.name === "Lost" ? "lost" : "open";
-  const { data: opp } = await db.from("opportunities").update({ stage_id: stageId, status, closed_at: status === "open" ? null : new Date().toISOString() }).eq("id", oppId).select("contact_id").single();
-  if (opp) await fireTrigger(ws.id, opp.contact_id, { type: "stage_changed", stage_id: stageId });
+  const { data: opp } = await db.from("opportunities").update({ stage_id: stageId, status, closed_at: status === "open" ? null : new Date().toISOString() }).eq("id", oppId).select("contact_id,value").single();
+  if (opp) {
+    await fireTrigger(ws.id, opp.contact_id, { type: "stage_changed", stage_id: stageId });
+    if (status === "won") await sendMetaEvent(ws.id, opp.contact_id, "Purchase", Number(opp.value) || undefined);
+    await logActivity(ws.id, "user", `moved deal to ${stage?.name}`, "opportunity", oppId);
+  }
   revalidatePath("/pipeline");
 }
 
@@ -171,12 +184,12 @@ export async function moveOpportunity(fd: FormData) {
 // Steps are entered one per line: "send_email: Subject | Body", "wait: 48", "send_sms: Body",
 // "add_tag: name", "create_task: title", "stop_if_replied"
 export async function createAutomation(fd: FormData) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const db = await supabaseServer();
   const triggerType = String(fd.get("trigger_type"));
   const triggerValue = s(fd, "trigger_value");
   const config =
-    triggerType === "tag_added" ? { tag: triggerValue } : triggerType === "form_submitted" ? { form: triggerValue } : {};
+    triggerType === "tag_added" ? { tag: triggerValue } : triggerType === "form_submitted" ? { form: triggerValue } : triggerType === "date_reached" ? (() => { const [field, off, yr] = (triggerValue ?? "").split(",").map((x) => x.trim()); return { field, offset_days: off || "0", yearly: yr === "yearly" ? "1" : "0" }; })() : {};
   const { data: a } = await db
     .from("automations")
     .insert({ workspace_id: ws.id, name: s(fd, "name")!, trigger_type: triggerType, trigger_config: config })
@@ -223,6 +236,7 @@ export async function createAutomation(fd: FormData) {
 }
 
 export async function toggleAutomation(fd: FormData) {
+  await requireAdmin();
   const db = await supabaseServer();
   await db.from("automations").update({ active: fd.get("active") === "true" }).eq("id", String(fd.get("id")));
   revalidatePath("/automations");
@@ -244,7 +258,7 @@ export async function updateContact(fd: FormData) {
 }
 
 export async function deleteContact(fd: FormData) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const db = await supabaseServer();
   await db.from("contacts").delete().eq("id", String(fd.get("contact_id"))).eq("workspace_id", ws.id);
   redirect("/contacts");
@@ -284,6 +298,12 @@ export async function sendBroadcast(fd: FormData) {
   const subject = s(fd, "subject");
   const body = s(fd, "body");
   if ((!tag && !listId) || !subject || !body) redirect("/broadcast?error=Audience, subject and message are all required");
+  const sendAt = s(fd, "send_at");
+  if (sendAt && fd.get("confirm") === "on") {
+    const when = new Date(new Date(sendAt + "Z").getTime() - londonOffsetMs(sendAt));
+    await db.from("scheduled_sends").insert({ workspace_id: ws.id, tag: listId ? null : tag, list_id: listId || null, subject, body, send_at: when.toISOString() });
+    redirect(`/broadcast?scheduled=1`);
+  }
   if (fd.get("confirm") !== "on") redirect(`/broadcast?${listId ? `list=${listId}` : `tag=${encodeURIComponent(tag!)}`}&error=Tick the consent confirmation first`);
   let list: Awaited<ReturnType<typeof import("@/lib/lists").matchList>> | null;
   if (listId) {
@@ -299,6 +319,19 @@ export async function sendBroadcast(fd: FormData) {
     if (r.ok) sent++;
   }
   redirect(`/broadcast?done=${sent}`);
+}
+
+/** Offset of Europe/London from UTC at a given local datetime-local string (handles BST). */
+function londonOffsetMs(local: string) {
+  const asUtc = new Date(local + "Z");
+  const london = new Date(asUtc.toLocaleString("en-US", { timeZone: "Europe/London" }));
+  const utc = new Date(asUtc.toLocaleString("en-US", { timeZone: "UTC" }));
+  return london.getTime() - utc.getTime();
+}
+export async function cancelScheduled(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("scheduled_sends").update({ status: "cancelled" }).eq("id", String(fd.get("id"))).eq("status", "scheduled");
+  revalidatePath("/broadcast");
 }
 
 // ───────── Templates ─────────
@@ -504,4 +537,111 @@ export async function setBookingOutcome(fd: FormData) {
   const id = String(fd.get("booking_id"));
   await (await supabaseServer()).from("bookings").update({ status: String(fd.get("status")) }).eq("id", id).eq("workspace_id", ws.id);
   revalidatePath(`/contacts/${String(fd.get("contact_id"))}`);
+}
+
+// ───────── Hosted forms ─────────
+const parseFieldLines = (txt: string) =>
+  txt.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+    const [key, label, type, req] = l.split("|").map((x) => x.trim());
+    return { key: key.toLowerCase().replace(/[^a-z0-9_]/g, "_"), label: label || key, type: ["text", "email", "tel", "textarea", "number", "date"].includes(type) ? type : "text", required: /^(r|req|required|yes|true)/i.test(req ?? "") };
+  });
+
+export async function saveForm(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const slug = (s(fd, "slug") ?? "contact").toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  const fields = parseFieldLines(String(fd.get("fields") ?? ""));
+  if (!fields.some((f) => f.key === "email" || f.key === "phone")) redirect("/forms?error=Include an email or phone field");
+  const row = {
+    workspace_id: ws.id, slug, name: s(fd, "name") ?? slug, headline: s(fd, "headline") ?? "Get in touch", intro: s(fd, "intro"),
+    button_text: s(fd, "button_text") ?? "Send", success_message: s(fd, "success_message") ?? "Thanks, we will be in touch shortly.",
+    consent_text: s(fd, "consent_text") ?? "I agree to be contacted by email and WhatsApp about my enquiry.",
+    tags: (s(fd, "tags") ?? "").split(",").map((x) => x.trim()).filter(Boolean), fields,
+    exit_intent: fd.get("exit_intent") === "on", popup_delay_seconds: Number(fd.get("popup_delay_seconds")) || 0, active: true,
+  };
+  await (await supabaseServer()).from("hosted_forms").upsert(row, { onConflict: "workspace_id,slug" });
+  await logActivity(ws.id, "user", "saved form", "form", slug);
+  revalidatePath("/forms");
+}
+export async function toggleForm(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("hosted_forms").update({ active: fd.get("active") === "1" }).eq("id", String(fd.get("id")));
+  revalidatePath("/forms");
+}
+export async function deleteForm(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("hosted_forms").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/forms");
+}
+
+// ───────── Calls ─────────
+export async function callContact(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const id = String(fd.get("contact_id"));
+  const { data: c } = await db.from("contacts").select("id,phone").eq("id", id).single();
+  let msg = "Call started: your phone will ring first";
+  if (!c) msg = "Contact not found";
+  else {
+    const { startCall } = await import("@/lib/calls");
+    const r = await startCall(ws, c).catch((e) => ({ ok: false as const, error: String(e) }));
+    if (!r.ok) msg = r.error;
+  }
+  redirect(`/contacts/${id}?msg=${encodeURIComponent(msg)}`);
+}
+
+// ───────── Team ─────────
+export async function inviteMember(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const email = (s(fd, "email") ?? "").toLowerCase();
+  const role = fd.get("role") === "admin" ? "admin" : "member";
+  if (!email) redirect("/team?error=Enter an email");
+  const admin = supabaseAdmin();
+  let userId: string | undefined;
+  const invited = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/login` });
+  userId = invited.data.user?.id;
+  if (!userId) {
+    const list = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    userId = list.data.users.find((u) => u.email?.toLowerCase() === email)?.id;
+  }
+  if (!userId) redirect("/team?error=" + encodeURIComponent(invited.error?.message ?? "Could not invite that email"));
+  await admin.from("workspace_members").upsert({ workspace_id: ws.id, user_id: userId, role }, { onConflict: "workspace_id,user_id" });
+  await logActivity(ws.id, "user", `invited ${email} as ${role}`, "team");
+  redirect("/team?done=1");
+}
+export async function removeMember(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const uid = String(fd.get("user_id"));
+  await supabaseAdmin().from("workspace_members").delete().eq("workspace_id", ws.id).eq("user_id", uid).neq("role", "owner");
+  await logActivity(ws.id, "user", "removed team member", "team", uid);
+  revalidatePath("/team");
+}
+export async function assignContact(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const id = String(fd.get("contact_id"));
+  await (await supabaseServer()).from("contacts").update({ owner_id: String(fd.get("owner_id")) || null }).eq("id", id).eq("workspace_id", ws.id);
+  revalidatePath(`/contacts/${id}`);
+}
+
+// ───────── Snippets ─────────
+export async function saveSnippet(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("snippets").insert({ workspace_id: ws.id, name: s(fd, "name")!, body: s(fd, "body")! });
+  revalidatePath("/snippets");
+}
+export async function deleteSnippet(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("snippets").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/snippets");
+}
+
+// ───────── Task board ─────────
+export async function assignTask(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("tasks").update({ assigned_to: String(fd.get("user_id")) || null }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
+  revalidatePath("/tasks");
+}
+export async function toggleTaskBoard(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("tasks").update({ done: fd.get("done") === "true" }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
+  revalidatePath("/tasks");
 }

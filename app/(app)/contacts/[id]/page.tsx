@@ -1,14 +1,14 @@
 import { notFound } from "next/navigation";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, saveCustomValues, sendMessage, setBookingOutcome, toggleTask, updateContact } from "../../../actions";
+import { callContact, addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, saveCustomValues, sendMessage, setBookingOutcome, toggleTask, updateContact } from "../../../actions";
 
-export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; t?: string }> }) {
+export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; t?: string; s?: string; msg?: string }> }) {
   const { id } = await params;
-  const { error, t: tplId } = await searchParams;
+  const { error, t: tplId, s: snipId, msg } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
-  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }, { data: templates }, { data: fields }, { data: bookings }] = await Promise.all([
+  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }, { data: templates }, { data: fields }, { data: bookings }, { data: snippets }, { data: calls }, { data: events }] = await Promise.all([
     db.from("contacts").select("*").eq("id", id).eq("workspace_id", ws.id).maybeSingle(),
     db.from("messages").select("*").eq("contact_id", id).order("created_at"),
     db.from("notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
@@ -17,7 +17,19 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
     db.from("email_templates").select("*").eq("workspace_id", ws.id).order("name"),
     db.from("custom_fields").select("*").eq("workspace_id", ws.id).order("label"),
     db.from("bookings").select("*").eq("contact_id", id).order("start_time", { ascending: false }),
+    db.from("snippets").select("*").eq("workspace_id", ws.id).order("name"),
+    db.from("call_logs").select("*").eq("contact_id", id).order("created_at", { ascending: false }).limit(30),
+    db.from("message_events").select("*").eq("contact_id", id).order("created_at", { ascending: false }).limit(60),
   ]);
+  const snip = (snippets ?? []).find((x) => x.id === snipId);
+  const timeline = [
+    ...(messages ?? []).map((m) => ({ at: m.created_at, text: `${m.direction === "out" ? "Sent" : "Received"} ${m.channel}${m.subject ? `: ${m.subject}` : ""} (${m.status})` })),
+    ...(events ?? []).map((e) => ({ at: e.created_at, text: `Message ${e.type}${e.machine ? " (likely automated)" : ""}${e.url ? `: ${e.url}` : ""}` })),
+    ...(notes ?? []).map((n) => ({ at: n.created_at, text: `Note: ${n.body}` })),
+    ...(calls ?? []).map((k) => ({ at: k.created_at, text: `Call ${k.direction === "in" ? "from" : "to"} contact: ${k.status}${k.duration_seconds ? `, ${k.duration_seconds}s` : ""}` })),
+    ...(bookings ?? []).map((b) => ({ at: b.created_at, text: `Booking ${b.status.replace("_", " ")}: ${new Date(b.start_time).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short" })}` })),
+    ...(tasks ?? []).map((k) => ({ at: k.created_at, text: `Task ${k.done ? "done" : "open"}: ${k.title}` })),
+  ].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 80);
   const tpl = (templates ?? []).find((x) => x.id === tplId);
   const { data: conn } = await (await import("@/lib/supabase/admin")).supabaseAdmin().from("mail_connections").select("account_email").eq("workspace_id", ws.id).maybeSingle();
   if (!c) notFound();
@@ -32,6 +44,8 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
         </p>
 
         {error && <p className="mt-2 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+        {msg && <p className="mt-2 rounded bg-blue-50 p-2 text-sm text-blue-800">{msg}</p>}
+        {c.phone && <form action={callContact} className="mt-2"><input type="hidden" name="contact_id" value={c.id} /><button className="rounded border px-3 py-1 text-sm">Call {c.phone}</button></form>}
         <details className="mt-3 rounded border p-3 text-sm">
           <summary className="cursor-pointer font-medium">Edit, merge or delete</summary>
           <form action={updateContact} className="mt-3 grid grid-cols-2 gap-2">
@@ -76,13 +90,23 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
               <option value="email">Email (Resend)</option>
               {conn && <option value="outlook">Email (Outlook: {conn.account_email})</option>}
               <option value="whatsapp">WhatsApp</option>
+              {(c.custom ?? {}).messenger_psid ? <option value="messenger">Facebook Messenger</option> : null}
+              {(c.custom ?? {}).instagram_id ? <option value="instagram">Instagram DM</option> : null}
             </select>
             <input name="subject" defaultValue={tpl?.subject} placeholder="Subject (email only)" className="flex-1 rounded border p-2" />
           </div>
-          <textarea name="body" rows={3} defaultValue={tpl?.body} placeholder="Message" required className="rounded border p-2" />
+          <textarea name="body" rows={3} defaultValue={snip?.body ?? tpl?.body} placeholder="Message" required className="rounded border p-2" />
           {(templates ?? []).length > 0 && <p className="text-xs text-gray-500">Templates: {(templates ?? []).map((x) => <a key={x.id} className="mr-2 underline" href={`/contacts/${c.id}?t=${x.id}`}>{x.name}</a>)}</p>}
+          {(snippets ?? []).length > 0 && <p className="text-xs text-gray-500">Snippets: {(snippets ?? []).map((x) => <a key={x.id} className="mr-2 underline" href={`/contacts/${c.id}?s=${x.id}`}>{x.name}</a>)}</p>}
           <button className="self-start rounded bg-black px-4 py-2 text-white">Send</button>
         </form>
+
+        <details className="mt-6 rounded border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Timeline ({timeline.length})</summary>
+          <ul className="mt-2 flex flex-col gap-1">
+            {timeline.map((e, i) => <li key={i} className="flex gap-3"><span className="w-36 shrink-0 text-xs text-gray-500">{new Date(e.at).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "short", timeStyle: "short" })}</span><span>{e.text}</span></li>)}
+          </ul>
+        </details>
       </section>
 
       <aside className="flex flex-col gap-6">

@@ -25,7 +25,9 @@ export type TriggerEvent =
   | { type: "stage_changed"; stage_id: string }
   | { type: "form_submitted"; form: string }
   | { type: "booking_created" }
-  | { type: "booking_cancelled" };
+  | { type: "booking_cancelled" }
+  | { type: "date_reached" }
+  | { type: "missed_call" };
 
 /** Call whenever something happens. Enrols the contact in every matching active automation. */
 export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent, context: Record<string, unknown> = {}) {

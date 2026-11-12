@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fireTrigger } from "@/lib/automation";
+import { sendMetaEvent } from "@/lib/capi";
 import { notifyOwner } from "@/lib/notify";
 
 // Cal.com -> Settings -> Developer -> Webhooks: URL .../api/webhooks/calcom?ws=<workspace slug>, secret = CALCOM_WEBHOOK_SECRET.
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
     } else {
       if (pl.rescheduleUid) await db.from("bookings").update({ status: "cancelled" }).eq("workspace_id", ws.id).eq("uid", pl.rescheduleUid);
       const { data: bk } = await db.from("bookings").upsert({ workspace_id: ws.id, contact_id: c.id, uid: pl.uid, title: pl.title ?? null, start_time: pl.startTime, end_time: pl.endTime ?? null, status: "booked" }, { onConflict: "workspace_id,uid" }).select("id").single();
-      if (bk) await fireTrigger(ws.id, c.id, { type: "booking_created" }, { booking_id: bk.id });
+      if (bk) { await fireTrigger(ws.id, c.id, { type: "booking_created" }, { booking_id: bk.id }); await sendMetaEvent(ws.id, c.id, "Schedule"); }
     }
   }
   await notifyOwner(ws.id, `${ev.triggerEvent.replace("BOOKING_", "Booking ").toLowerCase()}: ${att.name ?? att.email}`, `${ev.payload?.title ?? ""}\n${ev.payload?.startTime ?? ""}`);

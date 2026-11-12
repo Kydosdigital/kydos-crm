@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { toE164 } from "@/lib/messaging";
 import { fireTrigger } from "@/lib/automation";
 import { notifyOwner } from "@/lib/notify";
+import { sendMetaEvent } from "@/lib/capi";
+import { receiveSocialDM } from "@/lib/social";
 
 // Meta app -> Webhooks. Callback URL: <app>/api/webhooks/meta, verify token = META_VERIFY_TOKEN.
 // Subscribe: Page > leadgen (Facebook lead forms); WhatsApp Business Account > messages (inbound replies and delivery status).
@@ -59,7 +61,7 @@ async function handleLead(wsId: string, leadgenId: string, formId?: string) {
   }
   if (!id) return;
   await db.from("notes").insert({ workspace_id: wsId, contact_id: id, body: `Facebook lead ${leadgenId}: ${j.field_data.map((x) => `${x.name}=${x.values.join("/")}`).join("; ")}` });
-  if (isNew) await fireTrigger(wsId, id, { type: "contact_created" });
+  if (isNew) { await fireTrigger(wsId, id, { type: "contact_created" }); await sendMetaEvent(wsId, id, "Lead"); }
   await fireTrigger(wsId, id, { type: "form_submitted", form: "facebook" });
   await fireTrigger(wsId, id, { type: "tag_added", tag: "fb-lead" });
 }
@@ -73,6 +75,12 @@ export async function POST(req: Request) {
   if (!ws) return new Response("ok");
 
   for (const entry of body.entry ?? []) {
+    // Messenger (object "page") and Instagram DMs (object "instagram") arrive as entry.messaging[]
+    for (const ev of entry.messaging ?? []) {
+      if (ev.message && !ev.message.is_echo && ev.sender?.id) {
+        try { await receiveSocialDM(ws.id, body.object === "instagram" ? "instagram" : "messenger", String(ev.sender.id), ev.message.text ?? "[attachment]", ev.message.mid); } catch (e) { console.error("dm", e); }
+      }
+    }
     for (const ch of entry.changes ?? []) {
       if (ch.field === "leadgen") {
         try { await handleLead(ws.id, ch.value.leadgen_id, ch.value.form_id); } catch (e) { console.error("lead", e); }
@@ -81,7 +89,11 @@ export async function POST(req: Request) {
         const v = ch.value ?? {};
         for (const m of v.messages ?? []) {
           const phone = toE164("+" + String(m.from));
-          const { data: c } = await db.from("contacts").select("id,sms_opt_out").eq("workspace_id", ws.id).eq("phone", phone!).maybeSingle();
+          let { data: c } = await db.from("contacts").select("id,sms_opt_out").eq("workspace_id", ws.id).eq("phone", phone!).maybeSingle();
+          if (!c && phone) {
+            const ins = await db.from("contacts").insert({ workspace_id: ws.id, phone, first_name: v.contacts?.[0]?.profile?.name ?? null, source: "inbound-whatsapp", tags: [] }).select("id,sms_opt_out").single();
+            c = ins.data;
+          }
           const text = m.text?.body ?? `[${m.type}]`;
           if (c) {
             await db.from("messages").insert({ workspace_id: ws.id, contact_id: c.id, channel: "whatsapp", direction: "in", body: text, status: "received", provider_id: m.id });
