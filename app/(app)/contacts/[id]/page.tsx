@@ -27,12 +27,12 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
   ]);
   const snip = (snippets ?? []).find((x) => x.id === snipId);
   const timeline = [
-    ...(messages ?? []).map((m) => ({ at: m.created_at, text: `${m.direction === "out" ? "Sent" : "Received"} ${m.channel}${m.subject ? `: ${m.subject}` : ""} (${m.status})` })),
-    ...(events ?? []).map((e) => ({ at: e.created_at, text: `Message ${e.type}${e.machine ? " (likely automated)" : ""}${e.url ? `: ${e.url}` : ""}` })),
-    ...(notes ?? []).map((n) => ({ at: n.created_at, text: `Note: ${n.body}` })),
-    ...(calls ?? []).map((k) => ({ at: k.created_at, text: `Call ${k.direction === "in" ? "from" : "to"} contact: ${k.status}${k.duration_seconds ? `, ${k.duration_seconds}s` : ""}` })),
-    ...(bookings ?? []).map((b) => ({ at: b.created_at, text: `Booking ${b.status.replace("_", " ")}: ${new Date(b.start_time).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short" })}` })),
-    ...(tasks ?? []).map((k) => ({ at: k.created_at, text: `Task ${k.done ? "done" : "open"}: ${k.title}` })),
+    ...(messages ?? []).map((m) => ({ at: m.created_at, kind: m.channel === "email" || m.channel === "outlook" ? "mail" : "msg", text: `${m.direction === "out" ? "Sent" : "Received"} ${m.channel}${m.subject ? `: ${m.subject}` : ""} (${m.status})` })),
+    ...(events ?? []).map((e) => ({ at: e.created_at, kind: "mail", text: `Message ${e.type}${e.machine ? " (likely automated)" : ""}${e.url ? `: ${e.url}` : ""}` })),
+    ...(notes ?? []).map((n) => ({ at: n.created_at, kind: "note", text: `Note: ${n.body}` })),
+    ...(calls ?? []).map((k) => ({ at: k.created_at, kind: "call", text: `Call ${k.direction === "in" ? "from" : "to"} contact: ${k.status}${k.duration_seconds ? `, ${k.duration_seconds}s` : ""}` })),
+    ...(bookings ?? []).map((b) => ({ at: b.created_at, kind: "booking", text: `Booking ${b.status.replace("_", " ")}: ${new Date(b.start_time).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short" })}` })),
+    ...(tasks ?? []).map((k) => ({ at: k.created_at, kind: "task", text: `Task ${k.done ? "done" : "open"}: ${k.title}` })),
   ].sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 80);
   const tpl = (templates ?? []).find((x) => x.id === tplId);
   const { data: conn } = await (await import("@/lib/supabase/admin")).supabaseAdmin().from("mail_connections").select("account_email").eq("workspace_id", ws.id).maybeSingle();
@@ -150,9 +150,9 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
             <summary className="text-[13px]"><History className="h-4 w-4 text-faint" aria-hidden />Timeline ({timeline.length})</summary>
             <ul className="mt-4 flex max-h-[26rem] flex-col overflow-y-auto">
               {timeline.map((e, i) => (
-                <li key={i} className="relative flex gap-3 pb-3.5 pl-5 text-[13px] last:pb-0">
-                  <span aria-hidden className="absolute left-[3px] top-[7px] h-[7px] w-[7px] rounded-full bg-line-strong ring-4 ring-surface" />
-                  {i < timeline.length - 1 && <span aria-hidden className="absolute bottom-0 left-[6px] top-4 w-px bg-line" />}
+                <li key={i} className="relative flex gap-3 pb-3.5 pl-7 text-[13px] last:pb-0">
+                  {(() => { const I = ({ mail: Mail, msg: MessageSquare, note: StickyNote, call: PhoneCall, booking: CalendarCheck, task: ListChecks } as Record<string, typeof Mail>)[e.kind] ?? History; return <span aria-hidden className="absolute -left-0.5 top-0 flex h-5 w-5 items-center justify-center rounded-full bg-subtle text-muted ring-4 ring-surface"><I className="h-3 w-3" /></span>; })()}
+                  {i < timeline.length - 1 && <span aria-hidden className="absolute bottom-0 left-[8px] top-6 w-px bg-line" />}
                   <span className="tabular w-28 shrink-0 text-xs leading-5 text-muted">{new Date(e.at).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "short", timeStyle: "short" })}</span>
                   <span className="min-w-0 break-words text-ink-2">{e.text}</span>
                 </li>
