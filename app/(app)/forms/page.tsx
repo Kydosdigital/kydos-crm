@@ -4,6 +4,7 @@ import { deleteForm, saveForm, toggleForm } from "../../actions";
 import { ExternalLink, FormInput, Pause, Play, Plus } from "lucide-react";
 import { Alert, Badge, EmptyState, Field, Page, PageHeader } from "@/components/ui";
 import { CodeBlock } from "@/components/ui/copy-button";
+import { FieldBuilder } from "@/components/ui/field-builder";
 
 const DEFAULT_FIELDS = "first_name | First name | text | required\nemail | Email | email | required\nphone | Phone | tel | optional\nmessage | How can we help? | textarea | optional";
 
@@ -64,8 +65,8 @@ function FormEditor({ f }: { f?: F }) {
       <Field label="URL name" hint={f ? "The URL name cannot be changed once the form exists." : undefined}><input name="slug" placeholder="URL name, e.g. website-contact" defaultValue={f?.slug} required readOnly={!!f} className="input" /></Field>
       <Field label="Headline" className="col-span-2"><input name="headline" placeholder="Headline" defaultValue={f?.headline ?? "Get in touch"} className="input" /></Field>
       <Field label="Intro line" className="col-span-2"><input name="intro" placeholder="Intro line (optional)" defaultValue={f?.intro ?? ""} className="input" /></Field>
-      <Field label="Fields" className="col-span-2" hint="One field per line: key | label | type | required. Types: text, email, tel, textarea, number, date. Keys first_name, last_name, email, phone and company fill the contact; any other key becomes a custom field value (and a note if the key is message).">
-        <textarea name="fields" rows={5} spellCheck={false} defaultValue={f ? f.fields.map((x) => `${x.key} | ${x.label} | ${x.type} | ${x.required ? "required" : "optional"}`).join("\n") : DEFAULT_FIELDS} className="textarea !font-mono !text-xs" />
+      <Field label="Fields" className="col-span-2" hint="Keys first_name, last_name, email, phone and company fill the contact; any other field becomes a custom value (message also becomes a note).">
+        <FieldBuilder defaultValue={f ? f.fields.map((x) => `${x.key} | ${x.label} | ${x.type} | ${x.required ? "required" : "optional"}`).join("\n") : DEFAULT_FIELDS} />
       </Field>
       <Field label="Button text"><input name="button_text" placeholder="Button text" defaultValue={f?.button_text ?? "Send"} className="input" /></Field>
       <Field label="Tags to add"><input name="tags" placeholder="Tags to add, comma separated" defaultValue={f?.tags?.join(", ") ?? ""} className="input" /></Field>
