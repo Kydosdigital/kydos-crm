@@ -20,12 +20,12 @@ export async function proxy(request: NextRequest) {
     },
   );
   const { data } = await supabase.auth.getUser();
-  if (!data.user && !request.nextUrl.pathname.startsWith("/login")) {
+  if (!data.user && !["/login", "/signup"].some((p) => request.nextUrl.pathname.startsWith(p))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!api/|u/|f/|_next/|favicon.ico).*)"],
+  matcher: ["/((?!api/|u/|f/|auth/|_next/|favicon.ico).*)"],
 };

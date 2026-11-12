@@ -22,6 +22,28 @@ export async function login(fd: FormData) {
   redirect("/contacts");
 }
 
+export async function requestLink(fd: FormData) {
+  const kind = fd.get("kind") === "reset" ? "reset" : "login";
+  const email = String(fd.get("email") ?? "").trim();
+  if (email) await (await import("@/lib/authmail")).sendAuthLink(email, kind);
+  redirect("/login?sent=1");
+}
+export async function requestAccess(fd: FormData) {
+  const name = String(fd.get("name") ?? "").trim().slice(0, 80);
+  const email = String(fd.get("email") ?? "").trim().slice(0, 120);
+  if (!fd.get("website") && name && email) {
+    const { data: ws } = await supabaseAdmin().from("workspaces").select("id").order("created_at").limit(1).single();
+    if (ws) await (await import("@/lib/notify")).notifyOwner(ws.id, "CRM access requested", `${name} (${email}) asked for access. Approve them under Team, Invite.`);
+  }
+  redirect("/signup?sent=1");
+}
+export async function setPassword(fd: FormData) {
+  const db = await supabaseServer();
+  const { error } = await db.auth.updateUser({ password: String(fd.get("password")) });
+  if (error) redirect("/set-password?error=" + encodeURIComponent(error.message));
+  redirect("/contacts");
+}
+
 export async function logout() {
   await (await supabaseServer()).auth.signOut();
   redirect("/login");
@@ -598,14 +620,9 @@ export async function inviteMember(fd: FormData) {
   const role = fd.get("role") === "admin" ? "admin" : "member";
   if (!email) redirect("/team?error=Enter an email");
   const admin = supabaseAdmin();
-  let userId: string | undefined;
-  const invited = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/login` });
-  userId = invited.data.user?.id;
-  if (!userId) {
-    const list = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    userId = list.data.users.find((u) => u.email?.toLowerCase() === email)?.id;
-  }
-  if (!userId) redirect("/team?error=" + encodeURIComponent(invited.error?.message ?? "Could not invite that email"));
+  const sent = await (await import("@/lib/authmail")).sendAuthLink(email, "invite");
+  const userId = sent.ok ? sent.userId : undefined;
+  if (!userId) redirect("/team?error=" + encodeURIComponent(sent.ok ? "Could not invite that email" : sent.error));
   await admin.from("workspace_members").upsert({ workspace_id: ws.id, user_id: userId, role }, { onConflict: "workspace_id,user_id" });
   await logActivity(ws.id, "user", `invited ${email} as ${role}`, "team");
   redirect("/team?done=1");
