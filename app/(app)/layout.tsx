@@ -19,12 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (active) {
     const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
     const [msgs, tasks, drafts] = await Promise.all([
-      db.from("messages").select("contact_id,direction").eq("workspace_id", active.id).order("created_at", { ascending: false }).limit(300),
+      db.from("messages").select("contact_id").eq("workspace_id", active.id).eq("direction", "in").is("read_at", null).limit(1000),
       db.from("tasks").select("id", { count: "exact", head: true }).eq("workspace_id", active.id).eq("done", false).lte("due_at", endOfToday.toISOString()),
       db.from("agent_drafts").select("id", { count: "exact", head: true }).eq("workspace_id", active.id).eq("status", "pending"),
     ]);
-    const seen = new Set<string>();
-    counts["/inbox"] = (msgs.data ?? []).filter((m) => (seen.has(m.contact_id) ? false : (seen.add(m.contact_id), true)) && m.direction === "in").length;
+    counts["/inbox"] = new Set((msgs.data ?? []).map((m) => m.contact_id)).size;
     counts["/tasks"] = tasks.count ?? 0;
     counts["/agent"] = drafts.count ?? 0;
   }
