@@ -946,3 +946,19 @@ export async function removeWaTemplate(fd: FormData) {
   revalidatePath("/whatsapp");
   redirect("/whatsapp?msg=" + encodeURIComponent("Template deleted."));
 }
+
+// ───────── Call tracking numbers ─────────
+export async function addTrackingNumber(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const { toE164 } = await import("@/lib/messaging");
+  const number = toE164(String(fd.get("number") ?? ""));
+  if (!number) redirect("/call-tracking?error=" + encodeURIComponent("Enter the number in full, e.g. +447..."));
+  const { error } = await (await supabaseServer()).from("tracking_numbers").insert({ workspace_id: ws.id, number, label: s(fd, "label")!, utm_source: s(fd, "utm_source"), utm_medium: s(fd, "utm_medium"), utm_campaign: s(fd, "utm_campaign") });
+  if (error) redirect("/call-tracking?error=" + encodeURIComponent(error.message.includes("duplicate") ? "That number is already added." : error.message));
+  revalidatePath("/call-tracking");
+}
+export async function removeTrackingNumber(fd: FormData) {
+  const { ws } = await requireAdmin();
+  await (await supabaseServer()).from("tracking_numbers").delete().eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
+  revalidatePath("/call-tracking");
+}
