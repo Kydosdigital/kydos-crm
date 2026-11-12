@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "./supabase/admin";
-import { sendEmail, render } from "./messaging";
-import { matchList } from "./lists";
+import { audience, deliver, type Channel } from "./campaign";
 import { fireTrigger } from "./automation";
 import { logActivity } from "./log";
 
@@ -14,16 +13,10 @@ export async function processScheduledSends() {
     if (!claimed?.length) continue;
     const { data: ws } = await db.from("workspaces").select("*").eq("id", s.workspace_id).single();
     if (!ws) continue;
-    let people: Awaited<ReturnType<typeof matchList>> = [];
-    if (s.list_id) {
-      const { data: l } = await db.from("smart_lists").select("filter").eq("id", s.list_id).single();
-      people = l ? (await matchList(ws.id, l.filter)).filter((c) => c.email && !c.email_opt_out).slice(0, 90) : [];
-    } else if (s.tag) {
-      const r = await db.from("contacts").select("*").eq("workspace_id", ws.id).contains("tags", [s.tag]).eq("email_opt_out", false).not("email", "is", null).limit(90);
-      people = (r.data ?? []) as typeof people;
-    }
+    const ch = (s.channel ?? "email") as Channel;
+    const { people } = await audience(ws.id, { tag: s.tag, listId: s.list_id }, ch);
     let sent = 0;
-    for (const c of people) if ((await sendEmail(ws, c, render(s.subject, c), render(s.body, c))).ok) sent++;
+    for (const c of people) if ((await deliver(ws, c, { channel: ch, subject: s.subject, body: s.body, wa_template: s.wa_template, wa_lang: s.wa_lang })).ok) sent++;
     await db.from("scheduled_sends").update({ status: "sent", sent_count: sent }).eq("id", s.id);
     await logActivity(ws.id, "scheduler", "scheduled broadcast sent", "broadcast", s.id, `${sent} sent`);
     total += sent;

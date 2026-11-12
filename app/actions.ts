@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { supabaseServer } from "@/lib/supabase/server";
 import { requireWorkspace, requireAdmin } from "@/lib/workspace";
-import { sendEmail, sendSms, toE164, render } from "@/lib/messaging";
+import { sendEmail, sendSms, toE164 } from "@/lib/messaging";
 import { sendFromOutlook } from "@/lib/outlook";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fireTrigger } from "@/lib/automation";
@@ -294,36 +294,33 @@ export async function mergeContact(fd: FormData) {
   redirect(`/contacts/${keep.id}`);
 }
 
-// ───────── Bulk email ─────────
+// ───────── Bulk campaigns (email, SMS, WhatsApp) ─────────
 export async function sendBroadcast(fd: FormData) {
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
+  const channel = (["sms", "whatsapp"].includes(String(fd.get("channel"))) ? String(fd.get("channel")) : "email") as "email" | "sms" | "whatsapp";
   const tag = s(fd, "tag");
   const listId = s(fd, "list");
   const subject = s(fd, "subject");
   const body = s(fd, "body");
-  if ((!tag && !listId) || !subject || !body) redirect("/broadcast?error=Audience, subject and message are all required");
+  const template = s(fd, "wa_template");
+  const back = `/broadcast?${listId ? `list=${listId}` : `tag=${encodeURIComponent(tag ?? "")}`}&channel=${channel}`;
+  if ((!tag && !listId) || !body && channel !== "whatsapp" || (channel === "email" && !subject) || (channel === "whatsapp" && !template)) redirect(`${back}&error=Audience and the message fields are required`);
+  if (fd.get("confirm") !== "on") redirect(`${back}&error=Tick the consent confirmation first`);
+  const msg = { channel, subject, body, wa_template: template, wa_lang: s(fd, "wa_lang") || "en_GB" };
   const sendAt = s(fd, "send_at");
-  if (sendAt && fd.get("confirm") === "on") {
+  if (sendAt) {
     const when = new Date(new Date(sendAt + "Z").getTime() - londonOffsetMs(sendAt));
-    await db.from("scheduled_sends").insert({ workspace_id: ws.id, tag: listId ? null : tag, list_id: listId || null, subject, body, send_at: when.toISOString() });
+    await db.from("scheduled_sends").insert({ workspace_id: ws.id, tag: listId ? null : tag, list_id: listId || null, send_at: when.toISOString(), ...msg });
+    await logActivity(ws.id, "user", `scheduled ${channel} campaign`, "broadcast", undefined, subject ?? template ?? body?.slice(0, 40));
     redirect(`/broadcast?scheduled=1`);
   }
-  if (fd.get("confirm") !== "on") redirect(`/broadcast?${listId ? `list=${listId}` : `tag=${encodeURIComponent(tag!)}`}&error=Tick the consent confirmation first`);
-  let list: Awaited<ReturnType<typeof import("@/lib/lists").matchList>> | null;
-  if (listId) {
-    const { data: l } = await db.from("smart_lists").select("*").eq("id", listId).eq("workspace_id", ws.id).single();
-    list = l ? (await (await import("@/lib/lists")).matchList(ws.id, l.filter)).filter((c) => c.email && !c.email_opt_out).slice(0, 90) : [];
-  } else {
-    const r = await db.from("contacts").select("*").eq("workspace_id", ws.id).contains("tags", [tag!]).eq("email_opt_out", false).not("email", "is", null).limit(90);
-    list = r.data as typeof list;
-  }
+  const { audience, deliver } = await import("@/lib/campaign");
+  const { people } = await audience(ws.id, { tag, listId }, channel);
   let sent = 0;
-  for (const c of list ?? []) {
-    const r = await sendEmail(ws, c, render(subject!, c), render(body!, c));
-    if (r.ok) sent++;
-  }
-  redirect(`/broadcast?done=${sent}`);
+  for (const c of people) if ((await deliver(ws, c, msg)).ok) sent++;
+  await logActivity(ws.id, "user", `sent ${channel} campaign`, "broadcast", undefined, `${sent} of ${people.length} sent`);
+  redirect(`/broadcast?done=${sent}&of=${people.length}`);
 }
 
 /** Offset of Europe/London from UTC at a given local datetime-local string (handles BST). */
