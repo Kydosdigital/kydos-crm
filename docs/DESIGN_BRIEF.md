@@ -17,15 +17,13 @@ Goal: make Kydos CRM look and feel like a premium, modern product, on a par with
 
 ## Design direction
 
-- Premium, calm, confident. Think Attio, Linear, Stripe Dashboard, Folk, Close, HubSpot's newer UI, Pipedrive. Study their public marketing sites and screenshots for patterns (do not copy assets).
-- Light theme first, with a refined dark option if it is cheap to add via CSS variables.
-- Brand: Kydos Digital. Current brand navy `#1f3a5f`. Propose a full palette from it (neutrals, accent, success, warning, danger) as CSS variables in `app/globals.css`, plus a type scale (a modern sans such as Inter or Geist via `next/font`), spacing, radius and shadow tokens.
-- Layout: a slim, grouped sidebar (Sales, Marketing, Communication, Finance, Admin) with icons and an active state, a top bar with workspace switcher and user menu, a consistent page header (title, description, primary action), generous whitespace.
-- Components to design once and reuse: buttons (primary, secondary, ghost, danger), inputs/selects/textareas with labels and focus rings, cards, tables with sticky headers and row hover, badges/status pills, tabs, empty states, alerts/toasts, modals or drawers for create/edit forms, avatar/initials, stat tiles.
-- Key screens to get right first: Contacts list and contact detail (timeline, notes, messages, tasks), Pipeline (kanban with drag-feel cards), Inbox, Dashboard-style Reports/Analytics, Integrations, Invoices/Retainers/Proposals, Automations (edit page should feel like a builder), Forms, Settings, and the public client pages.
-- Empty, loading and error states for every list. Friendly microcopy in UK English, no em dashes.
-- Accessibility: AA contrast, visible focus, keyboard navigation, semantic HTML.
-- Mobile layout is a **later phase**; keep things responsive-friendly but do not prioritise it yet.
+You decide. Use your own design skills and your own research of current best-in-class CRM and SaaS products to choose the visual identity: colour palette, typography, iconography, density, layout patterns, motion and tone. Nothing here is prescribed. The only fixed point is the outcome: it must look and feel genuinely premium and modern, and be a pleasure to use all day.
+
+Context you may find useful, not constraints:
+- Product: Kydos CRM, used by a small UK digital marketing agency (Kydos Digital) to manage leads, pipeline, conversations across email, SMS, WhatsApp, Messenger and Instagram, automations, invoices, retainers and proposals. Some pages are seen by clients (proposals, content calendar approvals, payment pages, forms, login), so those need to reflect well on the agency.
+- The current look is a basic placeholder (plain Tailwind, navy `#1f3a5f` accent). Change it freely, including the colour. There is no existing brand guideline to follow.
+- Ideas to cover: navigation structure and grouping, page headers, a consistent component set (buttons, inputs, cards, tables, badges, tabs, modals or drawers, empty states, alerts), light and optionally dark themes, accessibility (AA contrast, focus states, keyboard use), UK English microcopy with no em dashes.
+- Mobile layout is a later phase; do not prioritise it yet.
 
 ## Deliverables
 
