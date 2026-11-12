@@ -25,6 +25,8 @@ Context you may find useful, not constraints:
 - Ideas to cover: navigation structure and grouping, page headers, a consistent component set (buttons, inputs, cards, tables, badges, tabs, modals or drawers, empty states, alerts), light and optionally dark themes, accessibility (AA contrast, focus states, keyboard use), UK English microcopy with no em dashes.
 - Mobile layout is a later phase; do not prioritise it yet.
 
+Optional reading: `docs/DESIGN_INSPIRATION.md` has research notes (21st.dev component references mapped to each CRM area, plus feature ideas from an open source CRM). It is reference material only. Use it, extend it, or ignore it.
+
 ## Deliverables
 
 1. Design tokens and base styles in `app/globals.css`.
