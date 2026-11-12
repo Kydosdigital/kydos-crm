@@ -2,10 +2,11 @@ import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import Link from "next/link";
 import { stepsToText } from "@/lib/automationSteps";
-import { createAutomation, toggleAutomation, duplicateAutomation } from "../../actions";
+import { createAutomation, createFromPreset, toggleAutomation, duplicateAutomation } from "../../actions";
 import { Bell, CheckSquare, Clock, Copy, GitBranch, KanbanSquare, Mail, MessageCircle, MessageSquareText, OctagonX, Pause, Pencil, Play, Plus, Shuffle, SlidersHorizontal, Tag, UserCheck, Webhook, Workflow, Zap, type LucideIcon } from "lucide-react";
 import { Alert, Badge, EmptyState, Field, Page, PageHeader, humanise } from "@/components/ui";
 import { Modal } from "@/components/ui/modal";
+import { PRESETS } from "@/lib/automationPresets";
 import { StepReference } from "./step-reference";
 import { StepBuilder } from "@/components/ui/step-builder";
 
@@ -73,6 +74,19 @@ export default async function Automations({ searchParams }: { searchParams: Prom
           </Modal>
         }
       />
+      <div className="card">
+        <div className="eyebrow mb-2">Start from a preset</div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {PRESETS.map((p) => (
+            <form key={p.key} action={createFromPreset} className="well flex flex-col gap-2">
+              <input type="hidden" name="key" value={p.key} />
+              <div className="font-medium text-ink">{p.name}</div>
+              <p className="text-sm text-muted">{p.blurb}</p>
+              <button className="btn self-start" data-toast="Preset added, paused">Use this preset</button>
+            </form>
+          ))}
+        </div>
+      </div>
       {saved && <Alert tone="success">Saved.</Alert>}
       {(autos ?? []).length === 0 && <div className="card"><EmptyState icon={Workflow} title="No automations yet">Create your first sequence with the New automation button, for example a follow-up for every new lead.</EmptyState></div>}
       <div className="grid items-start gap-4 lg:grid-cols-2">

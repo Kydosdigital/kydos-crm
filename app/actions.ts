@@ -256,6 +256,21 @@ export async function createAutomation(fd: FormData) {
   revalidatePath("/automations");
 }
 
+/** Creates a paused automation from a ready-made preset. */
+export async function createFromPreset(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const { PRESETS } = await import("@/lib/automationPresets");
+  const { parseSteps, triggerConfig } = await import("@/lib/automationSteps");
+  const pr = PRESETS.find((x) => x.key === String(fd.get("key")));
+  if (!pr) return;
+  const { data: a } = await db.from("automations").insert({ workspace_id: ws.id, name: pr.name, trigger_type: pr.trigger_type, trigger_config: triggerConfig(pr.trigger_type, pr.trigger_value), active: false }).select("id").single();
+  if (!a) return;
+  const steps = parseSteps(pr.steps).map((st, position) => ({ automation_id: a.id, workspace_id: ws.id, position, ...st }));
+  if (steps.length) await db.from("automation_steps").insert(steps);
+  redirect(`/automations/${a.id}`);
+}
+
 /** Edits an automation in place: name, trigger and the whole step list. Contacts already mid-run carry on at their current step number. */
 export async function updateAutomation(fd: FormData) {
   const { ws } = await requireAdmin();
