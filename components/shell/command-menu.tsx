@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CornerDownLeft, Search, UserSearch } from "lucide-react";
-import { EXTRA_COMMANDS, NAV, type NavItem } from "./nav";
+import { EXTRA_COMMANDS, NAV } from "./nav";
 
 /**
  * Quick jump (Cmd+K or Ctrl+K). Navigation only: it links to existing routes,
@@ -19,9 +19,9 @@ export function CommandMenu() {
   const all = useMemo(() => [...NAV.flatMap((g) => g.items.map((i) => ({ ...i, group: g.label ?? "Go to" }))), ...EXTRA_COMMANDS.map((i) => ({ ...i, group: "Actions" }))], []);
   const results = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const hits: (NavItem & { group: string })[] = t ? all.filter((i) => `${i.label} ${i.keywords ?? ""}`.toLowerCase().includes(t)) : all;
-    if (t) hits.push({ href: `/contacts?q=${encodeURIComponent(q.trim())}`, label: `Search contacts for "${q.trim()}"`, icon: UserSearch, group: "Contacts" });
-    return hits;
+    if (!t) return all;
+    const search = { href: `/contacts?q=${encodeURIComponent(q.trim())}`, label: `Search contacts for "${q.trim()}"`, icon: UserSearch, group: "Contacts" };
+    return [...all.filter((i) => `${i.label} ${i.keywords ?? ""}`.toLowerCase().includes(t)), search];
   }, [q, all]);
 
   const open = () => { setQ(""); setIndex(0); ref.current?.showModal(); inputRef.current?.focus(); };
