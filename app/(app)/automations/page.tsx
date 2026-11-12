@@ -99,7 +99,7 @@ export default async function Automations({ searchParams }: { searchParams: Prom
                     <li key={s.id} className="relative flex gap-3 pb-3 last:pb-0">
                       {i < mine.length - 1 && <span aria-hidden className="absolute bottom-0 left-[13px] top-7 w-px bg-line" />}
                       <span className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-lg border border-line bg-sunken text-muted"><Icon className="h-3.5 w-3.5" aria-hidden /></span>
-                      <div className="min-w-0 pt-[3px] text-[13px] leading-snug"><span className="font-medium text-ink">{humanise(type)}</span>{rest && <span className="ml-1.5 break-words text-muted">{rest}</span>}</div>
+                      <div className="min-w-0 pt-[3px] text-[13px] leading-snug"><span className="font-medium text-ink">{humanise(type)}</span>{rest && <span className="ml-1.5 break-words text-muted">{rest}{type === "wait" && /^\d+(\.\d+)?$/.test(rest) ? " hours" : ""}</span>}</div>
                     </li>
                   );
                 })}

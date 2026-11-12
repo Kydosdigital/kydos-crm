@@ -36,7 +36,7 @@ export default async function Proposal({ params }: { params: Promise<{ token: st
                 <p className="tabular text-2xl font-semibold tracking-tight" style={{ color: brand }}>£{Number(p.amount_gbp).toLocaleString("en-GB", { minimumFractionDigits: 2 })}</p>
               </div>
             )}
-            <div className="mt-8 text-[15px] leading-relaxed text-ink-2" dangerouslySetInnerHTML={{ __html: bodyToHtml(p.body, brand) }} />
+            <div className="rich mt-8 text-[15px] leading-relaxed text-ink-2" dangerouslySetInnerHTML={{ __html: bodyToHtml(p.body, brand) }} />
             <hr className="my-9" />
             {p.status === "accepted" && <p className="alert alert-success !text-sm"><CheckCircle2 aria-hidden /><span>Accepted by {p.signed_name} on {new Date(p.responded_at!).toLocaleDateString("en-GB", { timeZone: "Europe/London", dateStyle: "long" })}. Thank you, we will be in touch shortly.</span></p>}
             {p.status === "declined" && <p className="alert !text-sm">You declined this proposal. If that was a mistake, just reply to our email.</p>}

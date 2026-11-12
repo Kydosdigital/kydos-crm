@@ -66,7 +66,7 @@ export default async function Agent() {
         <div className="card divide-y divide-line">
           {need.map((r) => (
             <details key={r.contact.id} className="disclosure group px-5 py-3.5 text-[13px]">
-              <summary><Avatar name={String(nm(r.contact))} size="sm" /><b className="font-semibold text-ink">{nm(r.contact)}</b> <Badge tone={r.state === "reply_waiting" ? "brand" : "neutral"} dot>{STATE_LABEL[r.state]}</Badge><span className="ml-auto text-xs font-normal text-muted">{STATE_LABEL[r.state]}, {r.sent} sent, {r.opens} opens, {r.clicks} clicks, score {r.score}</span></summary>
+              <summary><Avatar name={String(nm(r.contact))} size="sm" /><b className="font-semibold text-ink">{nm(r.contact)}</b> <Badge tone={r.state === "reply_waiting" ? "brand" : "neutral"} dot>{STATE_LABEL[r.state]}</Badge><span className="tabular ml-auto text-xs font-normal text-muted">{r.sent} sent, {r.opens} opens, {r.clicks} clicks, score {r.score}</span></summary>
               <div className="mt-4 grid gap-3 pl-6 sm:grid-cols-2">
                 <p className="well flex gap-2.5 px-3.5 py-3 leading-relaxed text-ink-2"><Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning-ink" aria-hidden /><span><b className="font-semibold text-ink">Likely reason:</b> {PLAYBOOK[r.state].why}</span></p>
                 <p className="well flex gap-2.5 px-3.5 py-3 leading-relaxed text-ink-2"><Target className="mt-0.5 h-4 w-4 shrink-0 text-brand-text" aria-hidden /><span><b className="font-semibold text-ink">Next move:</b> {PLAYBOOK[r.state].do}</span></p>

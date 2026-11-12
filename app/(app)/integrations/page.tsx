@@ -36,7 +36,7 @@ export default async function Integrations({ searchParams }: { searchParams: Pro
       <PageHeader
         title="Integrations and interactions"
         description="Every connected service with a live health check, and every interaction across all channels in one feed. Reload the page to re-run the checks."
-        meta={<><Badge tone="success" dot>{live} connected</Badge>{broken > 0 && <Badge tone="danger" dot>{broken} with a problem</Badge>}</>}
+        meta={<><Badge tone={live ? "success" : "neutral"} dot>{live} connected</Badge>{broken > 0 && <Badge tone="danger" dot>{broken} with a problem</Badge>}</>}
       />
       {synced && <Alert tone="success">Facebook and Instagram sync finished: {synced} new message(s) imported.</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}

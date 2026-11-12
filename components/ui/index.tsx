@@ -16,9 +16,10 @@ export * from "./format";
 
 /** Standard page container. Every app page starts with this so titles line up across screens. */
 export function Page({ children, width = "default", className }: { children: ReactNode; width?: "default" | "narrow" | "full"; className?: string }) {
+  // "narrow" keeps the same left edge as other pages and only limits the line length.
   return (
-    <div className={cn("animate-rise mx-auto w-full px-8 pb-16 pt-7", width === "narrow" ? "max-w-3xl" : width === "full" ? "max-w-none" : "max-w-[1180px]", className)}>
-      {children}
+    <div className={cn("animate-rise mx-auto w-full px-8 pb-16 pt-7", width === "full" ? "max-w-none" : "max-w-[1180px]", className)}>
+      {width === "narrow" ? <div className="max-w-3xl">{children}</div> : children}
     </div>
   );
 }

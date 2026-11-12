@@ -669,6 +669,17 @@
     animation: fade-in 0.18s ease-out;
   }
 
+  /* ---------- Rich text rendered from bodyToHtml (proposals) ---------- */
+  .rich ul {
+    list-style: disc;
+  }
+  .rich ol {
+    list-style: decimal;
+  }
+  .rich a {
+    text-underline-offset: 3px;
+  }
+
   /* ---------- Misc ---------- */
   .tabular {
     font-variant-numeric: tabular-nums;
