@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireWorkspace, currentRole } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { callContact, addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, saveCustomValues, sendMessage, setBookingOutcome, toggleTask, updateContact } from "../../../actions";
 import { Building2, CalendarCheck, CheckCircle2, Circle, History, KanbanSquare, ListChecks, Mail, MessageSquare, Pencil, Phone, PhoneCall, Send, ShieldCheck, SlidersHorizontal, StickyNote, Tag } from "lucide-react";
@@ -37,7 +37,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
   const tpl = (templates ?? []).find((x) => x.id === tplId);
   const { data: conn } = await (await import("@/lib/supabase/admin")).supabaseAdmin().from("mail_connections").select("account_email").eq("workspace_id", ws.id).maybeSingle();
   if (!c) notFound();
-  await (await import("@/lib/supabase/admin")).supabaseAdmin().from("messages").update({ read_at: new Date().toISOString() }).eq("workspace_id", ws.id).eq("contact_id", id).eq("direction", "in").is("read_at", null);
+  if ((await currentRole(ws.id)) !== "client") await (await import("@/lib/supabase/admin")).supabaseAdmin().from("messages").update({ read_at: new Date().toISOString() }).eq("workspace_id", ws.id).eq("contact_id", id).eq("direction", "in").is("read_at", null);
 
   const name = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.phone;
   const openTasks = (tasks ?? []).filter((t) => !t.done).length;
