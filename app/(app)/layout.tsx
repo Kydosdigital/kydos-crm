@@ -5,6 +5,7 @@ import { ConfirmHost } from "@/components/shell/confirm-host";
 import { ToastHost } from "@/components/shell/toast-host";
 import { logout, switchWorkspace } from "../actions";
 import { KydosWordmark } from "@/components/shell/logo";
+import { NAV } from "@/components/shell/nav";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { WorkspaceSelect } from "@/components/shell/workspace-select";
 import { CommandMenu } from "@/components/shell/command-menu";
@@ -28,7 +29,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     counts["/tasks"] = tasks.count ?? 0;
     counts["/agent"] = drafts.count ?? 0;
   }
-  const hidden = role === "member" ? ["/team", "/settings", "/usage", "/integrations"] : [];
+  const CLIENT_PAGES = ["/contacts", "/pipeline", "/reports", "/calendar", "/tasks"];
+  const hidden = role === "client" ? NAV.flatMap((g) => g.items.map((i) => i.href)).filter((h) => !CLIENT_PAGES.includes(h)) : role === "member" ? ["/team", "/settings", "/usage", "/integrations"] : [];
   return (
     <div className="flex min-h-screen">
       <a href="#main" className="btn btn-primary sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50">Skip to content</a>

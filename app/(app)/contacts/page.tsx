@@ -115,7 +115,7 @@ export default async function Contacts({ searchParams }: { searchParams: Promise
           </span>
         </nav>
       )}
-      <BulkBar automations={autos ?? []} canDelete={role !== "member"} actions={{ tag: bulkTag, enrol: bulkEnrol, del: bulkDelete }} />
+      <BulkBar automations={autos ?? []} canDelete={(role === "owner" || role === "admin")} actions={{ tag: bulkTag, enrol: bulkEnrol, del: bulkDelete }} />
     </Page>
   );
 }

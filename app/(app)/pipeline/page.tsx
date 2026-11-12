@@ -52,7 +52,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="mb-5 flex flex-wrap items-center gap-1.5">
         {(pipes ?? []).map((x) => <Link key={x.id} href={`/pipeline?p=${x.id}`} className={`badge !px-3 !py-1.5 text-[13px] ${x.id === pipe?.id ? "badge-brand" : "hover:text-ink"}`}>{x.name}</Link>)}
-        {role !== "member" && (
+        {(role === "owner" || role === "admin") && (
           <Modal trigger={<><Plus aria-hidden />New pipeline</>} triggerClassName="btn btn-secondary btn-sm" title="New pipeline" description="Won and Lost stages are added automatically.">
             <form action={createPipeline} className="flex flex-col gap-3">
               <div><label className="label" htmlFor="pl-name">Name</label><input id="pl-name" name="name" required placeholder="e.g. Retainers" className="input" /></div>
@@ -61,7 +61,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
             </form>
           </Modal>
         )}
-        {role !== "member" && pipe && (pipes ?? []).length > 1 && (
+        {(role === "owner" || role === "admin") && pipe && (pipes ?? []).length > 1 && (
           <form action={deletePipeline} className="ml-auto"><input type="hidden" name="id" value={pipe.id} /><button className="btn btn-danger btn-sm" data-confirm="Delete this pipeline and its stages?">Delete this pipeline</button></form>
         )}
       </div>

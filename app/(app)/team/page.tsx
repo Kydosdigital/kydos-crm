@@ -29,7 +29,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<{ e
           <CardTitle icon={UserPlus}>Invite a teammate</CardTitle>
           <form action={inviteMember} className="flex flex-col gap-3">
             <Field label="Email"><input name="email" type="email" required placeholder="Email to invite" className="input" /></Field>
-            <Field label="Role"><select name="role" className="select"><option value="member">Member</option><option value="admin">Admin</option></select></Field>
+            <Field label="Role"><select name="role" className="select"><option value="member">Member</option><option value="admin">Admin</option><option value="client">Client (view only)</option></select></Field>
             <button className="btn btn-primary">Invite</button>
           </form>
         </Card>
