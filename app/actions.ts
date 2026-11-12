@@ -754,6 +754,14 @@ export async function cancelRetainer(fd: FormData) {
   revalidatePath("/retainers");
 }
 
+// ───────── Integrations ─────────
+export async function syncFacebookNow() {
+  const { ws } = await requireWorkspace();
+  const r = await (await import("@/lib/social")).syncSocialInbox(ws.id);
+  await logActivity(ws.id, "user", "synced Facebook and Instagram inbox", "integration", undefined, `${r.imported} imported${r.error ? `, ${r.error}` : ""}`);
+  redirect(`/integrations?synced=${r.imported}${r.error ? `&error=${encodeURIComponent(r.error)}` : ""}`);
+}
+
 // ───────── Proposals ─────────
 export async function createProposal(fd: FormData) {
   const { ws } = await requireWorkspace();

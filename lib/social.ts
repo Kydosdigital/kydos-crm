@@ -24,6 +24,37 @@ export async function receiveSocialDM(wsId: string, channel: SocialChannel, send
   await db.from("messages").insert({ workspace_id: wsId, contact_id: id, channel, direction: "in", body: text, status: "received", provider_id: mid });
 }
 
+/**
+ * Pulls recent Messenger and Instagram conversations from the Page and imports anything the webhook missed.
+ * Safe to run repeatedly: messages already stored (matched by Meta message id) are skipped.
+ */
+export async function syncSocialInbox(wsId: string) {
+  const token = process.env.META_PAGE_TOKEN;
+  if (!token) return { imported: 0, error: "META_PAGE_TOKEN is not set" };
+  const db = supabaseAdmin();
+  let imported = 0;
+  try {
+    const me = await (await fetch(`${GRAPH}/me?fields=id&access_token=${token}`)).json();
+    for (const channel of ["messenger", "instagram"] as SocialChannel[]) {
+      const r = await fetch(`${GRAPH}/me/conversations?platform=${channel}&limit=25&fields=messages.limit(15){id,message,from,created_time}&access_token=${token}`);
+      const j = await r.json();
+      if (!r.ok) { if (channel === "messenger") return { imported, error: j?.error?.message ?? `Meta ${r.status}` }; continue; }
+      for (const conv of j.data ?? []) {
+        for (const m of [...(conv.messages?.data ?? [])].reverse()) {
+          if (!m.message) continue;
+          const { data: dup } = await db.from("messages").select("id").eq("workspace_id", wsId).eq("provider_id", m.id).maybeSingle();
+          if (dup) continue;
+          if (m.from?.id && m.from.id !== me.id) {
+            await receiveSocialDM(wsId, channel, m.from.id, m.message, m.id);
+            imported++;
+          }
+        }
+      }
+    }
+    return { imported };
+  } catch (e) { return { imported, error: String(e) }; }
+}
+
 /** Replies to a Messenger/Instagram contact. Allowed within 24h of their last message (7 days with the human agent tag). */
 export async function sendSocialDM(wsId: string, c: { id: string; custom: Record<string, unknown> | null }, channel: SocialChannel, body: string) {
   const db = supabaseAdmin();
