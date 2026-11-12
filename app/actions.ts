@@ -380,7 +380,7 @@ export async function sendBroadcast(fd: FormData) {
   const sendAt = s(fd, "send_at");
   if (sendAt) {
     const when = new Date(new Date(sendAt + "Z").getTime() - londonOffsetMs(sendAt));
-    await db.from("scheduled_sends").insert({ workspace_id: ws.id, tag: listId ? null : tag, list_id: listId || null, send_at: when.toISOString(), ...msg });
+    await db.from("scheduled_sends").insert({ workspace_id: ws.id, tag: listId ? null : tag, list_id: listId || null, send_at: when.toISOString(), repeat: ["weekly","fortnightly","monthly"].includes(String(fd.get("repeat"))) ? String(fd.get("repeat")) : "none", ...msg });
     await logActivity(ws.id, "user", `scheduled ${channel} campaign`, "broadcast", undefined, subject ?? template ?? body?.slice(0, 40));
     redirect(`/broadcast?scheduled=1`);
   }

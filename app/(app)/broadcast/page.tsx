@@ -48,6 +48,7 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
               <label className="check-row"><input type="checkbox" name="confirm" className="checkbox" />These contacts have opted in to marketing by {channel === "email" ? "email" : channel === "sms" ? "text" : "WhatsApp"} (PECR)</label>
               <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line pt-4">
                 <label className="block"><span className="label">Schedule for later (UK time, leave empty to send now)</span><input type="datetime-local" name="send_at" className="input !w-60" /></label>
+                <label className="block"><span className="label">Repeat (needs a schedule time)</span><select name="repeat" className="select !w-44"><option value="none">Do not repeat</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
                 <button className="btn btn-primary"><Send aria-hidden />Send or schedule</button>
               </div>
             </form>
@@ -64,7 +65,7 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
                     <StatusBadge status={q.status} label={<>{q.status}{q.status === "sent" ? ` (${q.sent_count})` : ""}</>} />
                   </div>
                   <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-muted">
-                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden />{new Date(q.send_at).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "short", timeStyle: "short" })} · {q.tag ?? "smart list"}</span>
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden />{new Date(q.send_at).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "short", timeStyle: "short" })} · {q.tag ?? "smart list"}{q.repeat && q.repeat !== "none" ? ` · repeats ${q.repeat}` : ""}</span>
                     {q.status === "scheduled" && <form action={cancelScheduled}><input type="hidden" name="id" value={q.id} /><button className="btn btn-danger btn-sm">Cancel</button></form>}
                   </div>
                 </div>

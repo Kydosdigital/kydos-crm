@@ -18,6 +18,15 @@ export async function processScheduledSends() {
     let sent = 0;
     for (const c of people) if ((await deliver(ws, c, { channel: ch, subject: s.subject, body: s.body, wa_template: s.wa_template, wa_lang: s.wa_lang })).ok) sent++;
     await db.from("scheduled_sends").update({ status: "sent", sent_count: sent }).eq("id", s.id);
+    if (s.repeat && s.repeat !== "none") {
+      // Queue the next occurrence. Cancelling that queued row stops the series.
+      const next = new Date(s.send_at);
+      if (s.repeat === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+      else if (s.repeat === "fortnightly") next.setUTCDate(next.getUTCDate() + 14);
+      else next.setUTCMonth(next.getUTCMonth() + 1);
+      const { id: _id, created_at: _c, status: _s, sent_count: _n, ...rest } = s;
+      await db.from("scheduled_sends").insert({ ...rest, send_at: next.toISOString(), status: "scheduled", sent_count: 0 });
+    }
     await logActivity(ws.id, "scheduler", "scheduled broadcast sent", "broadcast", s.id, `${sent} sent`);
     total += sent;
   }
