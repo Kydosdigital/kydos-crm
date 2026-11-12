@@ -1,4 +1,4 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteKnowledge, saveKnowledge, toggleKnowledge } from "../../actions";
 import { BookOpen, Plus } from "lucide-react";
@@ -15,7 +15,7 @@ const kinds: [string, string][] = [
 ];
 
 export default async function Knowledge() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const { data } = await (await supabaseServer()).from("knowledge_items").select("*").eq("workspace_id", ws.id).order("kind").order("title");
   const TONE: Record<string, "brand" | "info" | "success" | "warning" | "violet" | "danger" | "neutral"> = { service: "brand", offer_ladder: "info", case_study: "success", objection: "warning", faq: "neutral", tone: "violet", rule: "danger" };
   return (

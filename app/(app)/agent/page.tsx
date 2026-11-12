@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { analyse, loadEngagement, PLAYBOOK, STATE_LABEL } from "@/lib/engagement";
 import { agentAvailable } from "@/lib/agent";
@@ -8,7 +8,7 @@ import { Check, CircleCheck, Lightbulb, PauseCircle, Sparkles, Target } from "lu
 import { Avatar, Badge, ChannelIcon, EmptyState, Page, PageHeader, Section, StatusBadge } from "@/components/ui";
 
 export default async function Agent() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const { data: drafts } = await db.from("agent_drafts").select("*, contacts(first_name,last_name,email,phone)").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(40);
   const { msgs, events, contacts } = await loadEngagement(ws.id, 60);

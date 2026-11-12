@@ -1,5 +1,5 @@
 import { supabaseServer } from "@/lib/supabase/server";
-import { getWorkspaces } from "@/lib/workspace";
+import { getWorkspaces, currentRole } from "@/lib/workspace";
 
 const esc = (v: unknown) => {
   let t = v == null ? "" : Array.isArray(v) ? v.join("; ") : String(v);
@@ -14,6 +14,7 @@ export async function GET(req: Request) {
   if (!u.user) return new Response("Sign in first", { status: 401 });
   const { active } = await getWorkspaces();
   if (!active) return new Response("No business", { status: 404 });
+  if ((await currentRole(active.id)) === "client") return new Response("Not available to client logins", { status: 403 });
   const sp = new URL(req.url).searchParams;
   const q = sp.get("q")?.replace(/[,()%]/g, " "), tag = sp.get("tag");
   let query = db.from("contacts").select("*").eq("workspace_id", active.id).order("created_at", { ascending: false }).limit(20000);

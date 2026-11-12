@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { Download, PhoneCall, PhoneIncoming, PhoneOutgoing, ScrollText } from "lucide-react";
 import { EmptyState, Page, PageHeader, Section, StatusBadge, TableCard } from "@/components/ui";
 
 export default async function Activity() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const [{ data: log }, { data: calls }] = await Promise.all([
     db.from("activity_log").select("*").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(100),

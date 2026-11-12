@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { matchList, type ListFilter } from "@/lib/lists";
 import { STATE_LABEL } from "@/lib/engagement";
@@ -15,7 +15,7 @@ const describe = (f: ListFilter) => [
 
 export default async function Lists({ searchParams }: { searchParams: Promise<{ enrolled?: string }> }) {
   const { enrolled } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const [{ data: lists }, { data: fields }, { data: autos }] = await Promise.all([
     db.from("smart_lists").select("*").eq("workspace_id", ws.id).order("name"),

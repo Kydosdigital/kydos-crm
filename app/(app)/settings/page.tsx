@@ -1,4 +1,5 @@
-import { getWorkspaces } from "@/lib/workspace";
+import { getWorkspaces, currentRole } from "@/lib/workspace";
+import { redirect } from "next/navigation";
 import { createWorkspace, updateSettings } from "../../actions";
 import { Building2, Mail, Palette, PhoneCall, Plug, Plus, Send } from "lucide-react";
 import { Alert, Card, CardTitle, Field, Page, PageHeader, Section } from "@/components/ui";
@@ -7,6 +8,7 @@ import { CodeBlock } from "@/components/ui/copy-button";
 export default async function Settings({ searchParams }: { searchParams: Promise<{ error?: string; connected?: string }> }) {
   const { error, connected } = await searchParams;
   const { active } = await getWorkspaces();
+  if (active) { const role = await currentRole(active.id); if (role !== "owner" && role !== "admin") redirect("/contacts?error=" + encodeURIComponent("That needs an admin. Ask the account owner.")); }
   const url = process.env.NEXT_PUBLIC_APP_URL ?? "https://YOUR-APP";
 
   const sections = [["business", "Business"], ["messaging", "Messaging"], ["calls", "Calls"], ["branding", "Branding and email"], ["preview", "Email preview"], ["outlook", "Outlook mailbox"], ["tools", "Connect your tools"], ["snippet", "Website form snippet"], ["new", "Add a business"]];

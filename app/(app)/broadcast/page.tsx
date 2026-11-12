@@ -1,4 +1,4 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { cancelScheduled, sendBroadcast } from "../../actions";
 import { Clock, Send, Users } from "lucide-react";
@@ -7,7 +7,7 @@ import { Alert, Card, CardTitle, ChannelIcon, Field, Page, PageHeader, Section, 
 export default async function Broadcast({ searchParams }: { searchParams: Promise<{ tag?: string; list?: string; error?: string; done?: string; of?: string; scheduled?: string; channel?: string }> }) {
   const { tag, list, error, done, of, scheduled, channel: ch } = await searchParams;
   const channel = (ch === "sms" || ch === "whatsapp" ? ch : "email") as "email" | "sms" | "whatsapp";
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   let count: number | null = null;
   let listName: string | null = null;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createRetainer, sendRetainerLink, cancelRetainer } from "../../actions";
 import { ExternalLink, Plus, Repeat, TrendingUp, Users } from "lucide-react";
@@ -10,7 +10,7 @@ const gbp = (n: number) => `£${Number(n).toLocaleString("en-GB", { minimumFract
 
 export default async function Retainers({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const [{ data: rets }, { data: contacts }] = await Promise.all([
     db.from("retainers").select("*, contacts(id,first_name,last_name,email)").eq("workspace_id", ws.id).order("created_at", { ascending: false }),

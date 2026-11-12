@@ -1,11 +1,11 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteSnippet, saveSnippet } from "../../actions";
 import { Plus, TextQuote } from "lucide-react";
 import { Card, CardTitle, EmptyState, Field, Page, PageHeader } from "@/components/ui";
 
 export default async function Snippets() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const { data } = await (await supabaseServer()).from("snippets").select("*").eq("workspace_id", ws.id).order("name");
   return (
     <Page>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createInvoice, sendInvoice, setInvoiceStatus } from "../../actions";
 import { Banknote, CircleCheck, ExternalLink, Hourglass, Plus, Receipt } from "lucide-react";
@@ -10,7 +10,7 @@ const gbp = (n: number) => `£${Number(n).toLocaleString("en-GB", { minimumFract
 
 export default async function Invoices({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const [{ data: invs }, { data: contacts }] = await Promise.all([
     db.from("invoices").select("*, contacts(id,first_name,last_name,email)").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(100),

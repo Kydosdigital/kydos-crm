@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createProposal, sendProposal, deleteProposal } from "../../actions";
 import { ExternalLink, FileSignature, Plus, Send } from "lucide-react";
@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal";
 
 export default async function Proposals({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const app = process.env.NEXT_PUBLIC_APP_URL ?? "";
   const [{ data: props }, { data: contacts }] = await Promise.all([

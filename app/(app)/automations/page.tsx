@@ -1,4 +1,4 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import Link from "next/link";
 import { stepsToText } from "@/lib/automationSteps";
@@ -26,7 +26,7 @@ create_task: Call {{first_name}}`
 
 export default async function Automations({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   const { saved } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const [{ data: autos }, { data: steps }, { data: runs }] = await Promise.all([
     db.from("automations").select("*").eq("workspace_id", ws.id).order("created_at"),

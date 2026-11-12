@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireAdmin } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { inspect } from "@/lib/integrations";
 import { syncFacebookNow } from "../../actions";
@@ -14,7 +14,7 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-GB", { ti
 
 export default async function Integrations({ searchParams }: { searchParams: Promise<{ channel?: string; synced?: string; error?: string }> }) {
   const { channel, synced, error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const db = await supabaseServer();
   let q = db.from("messages").select("id,channel,direction,subject,body,status,created_at,contact_id,contacts(first_name,last_name,email)").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(60);
   if (channel) q = q.eq("channel", channel);

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { stepsToText, triggerValue } from "@/lib/automationSteps";
 import { StepBuilder } from "@/components/ui/step-builder";
@@ -12,7 +12,7 @@ import { StepReference } from "../step-reference";
 export default async function EditAutomation({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const { id } = await params;
   const { error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const { data: a } = await db.from("automations").select("*").eq("id", id).eq("workspace_id", ws.id).maybeSingle();
   if (!a) notFound();

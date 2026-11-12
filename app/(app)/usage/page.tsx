@@ -1,4 +1,4 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireAdmin } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { PoundSterling, Send } from "lucide-react";
 import { ChannelIcon, Page, PageHeader, Stat, TableCard } from "@/components/ui";
@@ -7,7 +7,7 @@ import { ChannelIcon, Page, PageHeader, Stat, TableCard } from "@/components/ui"
 const RATE = { sms: 0.045, whatsapp: 0.04, email: 0.0007 };
 
 export default async function Usage() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const db = await supabaseServer();
   const since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0);
   const { data } = await db.from("messages").select("channel,direction,segments,status").eq("workspace_id", ws.id).eq("direction", "out").gte("created_at", since.toISOString());

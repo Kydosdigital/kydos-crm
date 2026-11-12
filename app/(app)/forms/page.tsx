@@ -1,4 +1,4 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteForm, saveForm, toggleForm } from "../../actions";
 import { ExternalLink, FormInput, Pause, Play, Plus } from "lucide-react";
@@ -10,7 +10,7 @@ const DEFAULT_FIELDS = "first_name | First name | text | required\nemail | Email
 
 export default async function Forms({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
   const { data: forms } = await db.from("hosted_forms").select("*").eq("workspace_id", ws.id).order("created_at");
   const app = process.env.NEXT_PUBLIC_APP_URL ?? "";

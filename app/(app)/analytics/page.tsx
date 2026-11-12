@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { Flame, Info } from "lucide-react";
 import { Avatar, Badge, CardTitle, ChannelIcon, Page, PageHeader, Segmented, Section, TableCard } from "@/components/ui";
 import { analyse, loadEngagement, pct, STATE_LABEL, type State } from "@/lib/engagement";
@@ -7,7 +7,7 @@ import { analyse, loadEngagement, pct, STATE_LABEL, type State } from "@/lib/eng
 const order: State[] = ["reply_waiting", "clicked", "opened", "unseen", "replied", "booked", "cold", "bounced", "new"];
 
 export default async function Analytics({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const days = Math.min(90, Math.max(1, Number((await searchParams).days) || 30));
   const { msgs, events, contacts } = await loadEngagement(ws.id, days);
   const a = analyse(msgs, events, contacts);

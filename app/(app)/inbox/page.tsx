@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sendMessage } from "../../actions";
@@ -13,7 +13,7 @@ const label = (c: C) => [c.first_name, c.last_name].filter(Boolean).join(" ") ||
 
 export default async function Inbox({ searchParams }: { searchParams: Promise<{ c?: string; f?: string }> }) {
   const { c: selected, f } = await searchParams;
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
 
   // Opening a thread marks its inbound messages as read.

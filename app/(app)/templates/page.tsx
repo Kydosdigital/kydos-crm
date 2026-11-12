@@ -1,11 +1,11 @@
-import { requireWorkspace } from "@/lib/workspace";
+import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { deleteTemplate, saveTemplate } from "../../actions";
 import { LayoutTemplate, Plus } from "lucide-react";
 import { Card, CardTitle, EmptyState, Field, Page, PageHeader } from "@/components/ui";
 
 export default async function Templates() {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireStaff();
   const { data } = await (await supabaseServer()).from("email_templates").select("*").eq("workspace_id", ws.id).order("name");
   return (
     <Page>
