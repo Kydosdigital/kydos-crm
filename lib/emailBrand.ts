@@ -8,14 +8,14 @@ export type Brand = {
 };
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const colour = (c?: string | null) => (c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#1f3a5f");
+const colour = (c?: string | null) => (c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#0e5a48");
 
 /** Inline markup on already-escaped text: **bold**, *italic*, bare URLs become links. */
 function inline(s: string) {
   return s
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1<em>$2</em>")
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" style="color:#1f3a5f">$2</a>');
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" style="color:#0e5a48">$2</a>');
 }
 
 /**

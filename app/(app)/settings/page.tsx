@@ -60,7 +60,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
                 <Card>
                   <div id="branding" className="scroll-mt-8"><CardTitle icon={Palette}>Branding and email</CardTitle></div>
                   <div className="grid grid-cols-2 gap-4">
-                    <Field label="Brand colour" hint="Six-digit hex. Used on emails and proposals."><input name="brand_color" defaultValue={active.brand_color ?? "#1f3a5f"} placeholder="Brand colour, e.g. #1f3a5f" className="input !font-mono" /></Field>
+                    <Field label="Brand colour" hint="Six-digit hex. Used on emails and proposals."><input name="brand_color" defaultValue={active.brand_color ?? "#0e5a48"} placeholder="Brand colour, e.g. #0e5a48" className="input !font-mono" /></Field>
                     <Field label="Website" hint="Shown in the email footer."><input name="website_url" defaultValue={active.website_url ?? ""} placeholder="Website, shown in the email footer" className="input" /></Field>
                     <Field label="Logo image link" className="col-span-2" hint="PNG or JPG, public https link, about 220px wide."><input name="logo_url" defaultValue={active.logo_url ?? ""} placeholder="Logo image link for emails (PNG or JPG, public https link, about 220px wide)" className="input" /></Field>
                     <Field label="Email signature" className="col-span-2" hint="Added under every email."><textarea name="email_signature" rows={3} defaultValue={active.email_signature ?? ""} placeholder="Email signature added under every email, e.g. Stephen Owojori, Director, Kydos Digital, 07..." className="textarea" /></Field>

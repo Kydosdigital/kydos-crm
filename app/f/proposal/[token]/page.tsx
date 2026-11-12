@@ -18,7 +18,7 @@ export default async function Proposal({ params }: { params: Promise<{ token: st
     await db.from("proposals").update({ status: "viewed", viewed_at: new Date().toISOString() }).eq("id", p.id).eq("status", "sent");
     await notifyOwner(p.workspace_id, "Proposal opened", `${p.title} has just been viewed.`);
   }
-  const brand = /^#[0-9a-fA-F]{6}$/.test(ws?.brand_color ?? "") ? ws!.brand_color! : "#1f3a5f";
+  const brand = /^#[0-9a-fA-F]{6}$/.test(ws?.brand_color ?? "") ? ws!.brand_color! : "#0e5a48";
   const done = p.status === "accepted" || p.status === "declined";
   return (
     <div data-theme="light" className="min-h-screen bg-canvas py-10 text-ink sm:py-14">

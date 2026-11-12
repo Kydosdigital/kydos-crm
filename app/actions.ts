@@ -79,7 +79,7 @@ export async function updateSettings(fd: FormData) {
       booking_link: s(fd, "booking_link"),
       review_link: s(fd, "review_link"),
       meta_dataset_id: s(fd, "meta_dataset_id"),
-      brand_color: /^#[0-9a-fA-F]{6}$/.test(s(fd, "brand_color") ?? "") ? s(fd, "brand_color") : "#1f3a5f",
+      brand_color: /^#[0-9a-fA-F]{6}$/.test(s(fd, "brand_color") ?? "") ? s(fd, "brand_color") : "#0e5a48",
       logo_url: s(fd, "logo_url"),
       email_signature: s(fd, "email_signature"),
       reply_to: s(fd, "reply_to"),
