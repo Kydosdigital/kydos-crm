@@ -4,6 +4,8 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { analyse, loadEngagement, PLAYBOOK, STATE_LABEL } from "@/lib/engagement";
 import { agentAvailable } from "@/lib/agent";
 import { approveDraft, askAgentToDraft, createDraft, editDraft, rejectDraft, setAgentMode } from "../../actions";
+import { Check, CircleCheck, Lightbulb, PauseCircle, Sparkles, Target } from "lucide-react";
+import { Avatar, Badge, ChannelIcon, EmptyState, Page, PageHeader, Section, StatusBadge } from "@/components/ui";
 
 export default async function Agent() {
   const { ws } = await requireWorkspace();
@@ -20,62 +22,76 @@ export default async function Agent() {
   const live = agentAvailable();
 
   return (
-    <div className="max-w-4xl">
-      <h1 className="mb-1 text-2xl font-semibold">Communications agent</h1>
-      <div className={`mb-4 rounded border p-3 text-sm ${live ? "border-green-300 bg-green-50" : "border-amber-300 bg-amber-50"}`}>
-        {live ? "AI key detected." : "AI drafting is paused: no Anthropic API key is set, so nothing is generated automatically and no AI cost is incurred."} Tracking, analytics, the playbook below and manual drafts all work now.
-        <form action={setAgentMode} className="mt-2 flex items-center gap-2">
-          <span>Mode:</span>
-          <select name="mode" defaultValue={ws.agent_mode} className="rounded border p-1">
-            <option value="off">Off</option>
-            <option value="approval">Draft for my approval</option>
-            <option value="auto">Auto-send follow-ups (replies still need approval)</option>
-          </select>
-          <button className="rounded border px-2 py-1">Save</button>
+    <Page>
+      <PageHeader title="Communications agent" description="Drafts follow-ups for your approval and shows who needs a nudge, based on how each contact has engaged." meta={live ? <Badge tone="success" dot>AI ready</Badge> : <Badge tone="warning" dot>AI paused</Badge>} />
+      <div className={`card mb-8 flex flex-wrap items-center justify-between gap-4 p-5 ${live ? "!border-success-ink/25" : "!border-warning-ink/25"}`}>
+        <div className="flex min-w-0 max-w-2xl items-start gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${live ? "bg-success-bg text-success-ink" : "bg-warning-bg text-warning-ink"}`}>{live ? <Sparkles className="h-4 w-4" aria-hidden /> : <PauseCircle className="h-4 w-4" aria-hidden />}</span>
+          <p className="text-[13px] leading-relaxed text-ink-2">{live ? "AI key detected." : "AI drafting is paused: no Anthropic API key is set, so nothing is generated automatically and no AI cost is incurred."} Tracking, analytics, the playbook below and manual drafts all work now.</p>
+        </div>
+        <form action={setAgentMode} className="flex items-end gap-2">
+          <label className="block"><span className="label">Mode:</span>
+            <select name="mode" defaultValue={ws.agent_mode} className="select !w-80">
+              <option value="off">Off</option>
+              <option value="approval">Draft for my approval</option>
+              <option value="auto">Auto-send follow-ups (replies still need approval)</option>
+            </select></label>
+          <button className="btn btn-secondary">Save</button>
         </form>
       </div>
 
-      <h2 className="mb-2 font-semibold">Approval queue ({pending.length})</h2>
-      {pending.map((d) => (
-        <div key={d.id} className="mb-3 rounded border p-3 text-sm">
-          <div className="mb-1 flex justify-between"><span><b>{nm(d.contacts)}</b> via {d.channel} <span className="rounded bg-gray-100 px-1.5 text-xs">{d.source === "ai" ? "AI draft" : "manual"}</span></span><span className="text-gray-500">{d.state ? STATE_LABEL[d.state as keyof typeof STATE_LABEL] : ""}</span></div>
-          {d.hypothesis && <p className="mb-1 text-gray-600"><b>Why:</b> {d.hypothesis} <b>Tactic:</b> {d.tactic}</p>}
-          <form action={editDraft} className="flex flex-col gap-2">
-            <input type="hidden" name="id" value={d.id} />
-            {d.channel === "email" && <input name="subject" defaultValue={d.subject ?? ""} className="rounded border p-2" />}
-            <textarea name="body" rows={6} defaultValue={d.body} className="rounded border p-2" />
-            <div className="flex gap-2">
-              <button className="rounded border px-3 py-1.5">Save edits</button>
-              <button formAction={approveDraft} className="rounded bg-black px-3 py-1.5 text-white">Approve and send</button>
-              <button formAction={rejectDraft} className="rounded border px-3 py-1.5 text-red-700">Reject</button>
+      <Section title={<>Approval queue ({pending.length})</>} className="mb-10">
+        <div className="flex flex-col gap-4">
+          {pending.map((d) => (
+            <div key={d.id} className="card p-5 text-[13px]">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2.5"><Avatar name={String(nm(d.contacts))} /><b className="text-sm font-semibold text-ink">{nm(d.contacts)}</b><span className="flex items-center gap-1.5 text-muted">via <ChannelIcon channel={d.channel} label /></span> <Badge tone={d.source === "ai" ? "violet" : "neutral"}>{d.source === "ai" ? "AI draft" : "manual"}</Badge></span><span>{d.state ? <Badge tone="outline">{STATE_LABEL[d.state as keyof typeof STATE_LABEL]}</Badge> : ""}</span></div>
+              {d.hypothesis && <p className="well mb-3 px-3.5 py-2.5 leading-relaxed text-ink-2"><b className="font-semibold text-ink">Why:</b> {d.hypothesis} <b className="font-semibold text-ink">Tactic:</b> {d.tactic}</p>}
+              <form action={editDraft} className="flex flex-col gap-2.5">
+                <input type="hidden" name="id" value={d.id} />
+                {d.channel === "email" && <input name="subject" defaultValue={d.subject ?? ""} aria-label="Subject" className="input !font-medium" />}
+                <textarea name="body" rows={6} defaultValue={d.body} aria-label="Message" className="textarea" />
+                <div className="flex gap-2">
+                  <button className="btn btn-secondary order-2">Save edits</button>
+                  <button formAction={approveDraft} className="btn btn-primary order-1"><Check aria-hidden />Approve and send</button>
+                  <button formAction={rejectDraft} className="btn btn-danger order-3 ml-auto">Reject</button>
+                </div>
+              </form>
             </div>
-          </form>
+          ))}
         </div>
-      ))}
-      {!pending.length && <p className="mb-4 text-sm text-gray-500">Nothing waiting.</p>}
+        {!pending.length && <div className="card"><EmptyState icon={CircleCheck} title="Nothing waiting." className="!py-9">Drafts that need your approval will appear here.</EmptyState></div>}
+      </Section>
 
-      <h2 className="mb-2 mt-6 font-semibold">Who needs a nudge</h2>
-      <p className="mb-2 text-sm text-gray-500">Ranked by engagement. The playbook explains the likely reason and the next move; write your own draft or, once the key is added, ask the agent.</p>
-      {need.map((r) => (
-        <details key={r.contact.id} className="mb-2 rounded border p-3 text-sm">
-          <summary className="cursor-pointer"><b>{nm(r.contact)}</b> <span className="text-gray-500">{STATE_LABEL[r.state]}, {r.sent} sent, {r.opens} opens, {r.clicks} clicks, score {r.score}</span></summary>
-          <p className="mt-2"><b>Likely reason:</b> {PLAYBOOK[r.state].why}</p>
-          <p className="mb-2"><b>Next move:</b> {PLAYBOOK[r.state].do}</p>
-          <form action={createDraft} className="flex flex-col gap-2">
-            <input type="hidden" name="contact_id" value={r.contact.id} /><input type="hidden" name="state" value={r.state} /><input type="hidden" name="tactic" value={PLAYBOOK[r.state].do} />
-            <select name="channel" className="w-40 rounded border p-1"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select>
-            <input name="subject" placeholder="Subject (email)" className="rounded border p-2" />
-            <textarea name="body" rows={4} placeholder="Draft message" required className="rounded border p-2" />
-            <div className="flex gap-2"><button className="rounded border px-3 py-1.5">Add to queue</button>
-              {live && <button formAction={askAgentToDraft} formNoValidate className="rounded border px-3 py-1.5">Ask agent to draft</button>}
-              <Link href={`/contacts/${r.contact.id}`} className="px-2 py-1.5 underline">Open contact</Link></div>
-          </form>
-        </details>
-      ))}
-      {!need.length && <p className="text-sm text-gray-500">Everyone is up to date.</p>}
+      <Section title="Who needs a nudge" description="Ranked by engagement. The playbook explains the likely reason and the next move; write your own draft or, once the key is added, ask the agent." className="mb-10">
+        <div className="card divide-y divide-line">
+          {need.map((r) => (
+            <details key={r.contact.id} className="disclosure group px-5 py-3.5 text-[13px]">
+              <summary><Avatar name={String(nm(r.contact))} size="sm" /><b className="font-semibold text-ink">{nm(r.contact)}</b> <Badge tone={r.state === "reply_waiting" ? "brand" : "neutral"} dot>{STATE_LABEL[r.state]}</Badge><span className="tabular ml-auto text-xs font-normal text-muted">{r.sent} sent, {r.opens} opens, {r.clicks} clicks, score {r.score}</span></summary>
+              <div className="mt-4 grid gap-3 pl-6 sm:grid-cols-2">
+                <p className="well flex gap-2.5 px-3.5 py-3 leading-relaxed text-ink-2"><Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning-ink" aria-hidden /><span><b className="font-semibold text-ink">Likely reason:</b> {PLAYBOOK[r.state].why}</span></p>
+                <p className="well flex gap-2.5 px-3.5 py-3 leading-relaxed text-ink-2"><Target className="mt-0.5 h-4 w-4 shrink-0 text-brand-text" aria-hidden /><span><b className="font-semibold text-ink">Next move:</b> {PLAYBOOK[r.state].do}</span></p>
+              </div>
+              <form action={createDraft} className="mt-3 flex flex-col gap-2.5 pb-2 pl-6">
+                <input type="hidden" name="contact_id" value={r.contact.id} /><input type="hidden" name="state" value={r.state} /><input type="hidden" name="tactic" value={PLAYBOOK[r.state].do} />
+                <div className="flex gap-2">
+                  <select name="channel" aria-label="Channel" className="select !w-40"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select>
+                  <input name="subject" placeholder="Subject (email)" aria-label="Subject (email)" className="input flex-1" />
+                </div>
+                <textarea name="body" rows={4} placeholder="Draft message" aria-label="Draft message" required className="textarea" />
+                <div className="flex items-center gap-2"><button className="btn btn-secondary">Add to queue</button>
+                  {live && <button formAction={askAgentToDraft} formNoValidate className="btn btn-secondary"><Sparkles aria-hidden />Ask agent to draft</button>}
+                  <Link href={`/contacts/${r.contact.id}`} className="btn btn-ghost">Open contact</Link></div>
+              </form>
+            </details>
+          ))}
+          {!need.length && <EmptyState icon={CircleCheck} title="Everyone is up to date." className="!py-9" />}
+        </div>
+      </Section>
 
-      {done.length > 0 && <><h2 className="mb-2 mt-6 font-semibold">Recent decisions</h2>
-        {done.map((d) => <div key={d.id} className="border-b py-1 text-sm text-gray-600">{nm(d.contacts)} via {d.channel}: {d.status}{d.error ? ` (${d.error})` : ""}</div>)}</>}
-    </div>
+      {done.length > 0 && <Section title="Recent decisions">
+        <div className="card divide-y divide-line">
+          {done.map((d) => <div key={d.id} className="flex items-center gap-2.5 px-5 py-2.5 text-[13px] text-ink-2"><Avatar name={String(nm(d.contacts))} size="sm" /><span className="font-medium text-ink">{nm(d.contacts)}</span><span className="text-muted">via {d.channel}:</span><StatusBadge status={d.status} label={d.status} />{d.error ? <span className="truncate text-danger-ink">({d.error})</span> : ""}</div>)}
+        </div></Section>}
+    </Page>
   );
 }

@@ -1,5 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifyUnsubToken } from "@/lib/messaging";
+import { LinkIcon, MailX } from "lucide-react";
+import { ClientShell, ResultCard } from "@/components/shell/public-shell";
 
 export default async function Unsubscribe({
   params,
@@ -13,9 +15,12 @@ export default async function Unsubscribe({
   const ok = !!t && verifyUnsubToken(contact, t);
   if (ok) await supabaseAdmin().from("contacts").update({ email_opt_out: true }).eq("id", contact);
   return (
-    <main className="mx-auto max-w-md p-10 text-center">
-      <h1 className="text-xl font-semibold">{ok ? "You have been unsubscribed" : "This link is not valid"}</h1>
-      {ok && <p className="mt-2 text-gray-600">You will no longer receive marketing emails from us.</p>}
-    </main>
+    <ClientShell width="sm" center>
+      {ok ? (
+        <ResultCard icon={<MailX aria-hidden />} title="You have been unsubscribed">You will no longer receive marketing emails from us.</ResultCard>
+      ) : (
+        <ResultCard tone="neutral" icon={<LinkIcon aria-hidden />} title="This link is not valid">Please use the unsubscribe link from the most recent email we sent you.</ResultCard>
+      )}
+    </ClientShell>
   );
 }

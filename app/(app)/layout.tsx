@@ -1,58 +1,39 @@
-import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { getWorkspaces } from "@/lib/workspace";
 import { logout, switchWorkspace } from "../actions";
-
-const nav = [
-  ["/contacts", "Contacts"],
-  ["/pipeline", "Pipeline"],
-  ["/tasks", "Tasks"],
-  ["/integrations", "Integrations"],
-  ["/invoices", "Invoices"],
-  ["/retainers", "Retainers"],
-  ["/proposals", "Proposals"],
-  ["/calendar", "Content calendar"],
-  ["/inbox", "Inbox"],
-  ["/broadcast", "Bulk email"],
-  ["/templates", "Templates"],
-  ["/snippets", "Snippets"],
-  ["/automations", "Automations"],
-  ["/forms", "Forms"],
-  ["/lists", "Lists and fields"],
-  ["/reports", "Reports"],
-  ["/analytics", "Analytics"],
-  ["/agent", "Comms agent"],
-  ["/knowledge", "Knowledge base"],
-  ["/activity", "Activity and calls"],
-  ["/team", "Team"],
-  ["/usage", "Usage"],
-  ["/settings", "Settings"],
-];
+import { KydosWordmark } from "@/components/shell/logo";
+import { SidebarNav } from "@/components/shell/sidebar-nav";
+import { WorkspaceSelect } from "@/components/shell/workspace-select";
+import { CommandMenu } from "@/components/shell/command-menu";
+import { ThemeToggle } from "@/components/shell/theme-toggle";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { all, active } = await getWorkspaces();
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 border-r border-[#e4e4df] bg-white p-4">
-        <div className="mb-6 flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded bg-[#1f3a5f] text-sm font-semibold text-white">K</span>
-          <span className="font-semibold tracking-tight">Kydos CRM</span>
+      <a href="#main" className="btn btn-primary sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50">Skip to content</a>
+      <aside className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col bg-side-bg text-side-ink">
+        <div className="flex flex-col gap-3 px-3 pb-3 pt-4">
+          <KydosWordmark className="px-1.5 text-side-ink" />
+          <form action={switchWorkspace}>
+            <WorkspaceSelect options={all.map((w) => ({ id: w.id, name: w.name }))} value={active?.id} />
+            <button className="sr-only">Switch business</button>
+          </form>
+          <CommandMenu />
         </div>
-        <form action={switchWorkspace} className="mb-4">
-          <select name="ws" defaultValue={active?.id} className="w-full rounded border p-1 text-sm">
-            {all.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          <button className="mt-1 text-xs text-gray-500 underline">Switch business</button>
-        </form>
-        <nav className="flex flex-col gap-1">
-          {nav.map(([href, label]) => (
-            <Link key={href} href={href} className="rounded px-2 py-1.5 text-[#374151] hover:bg-[#f3f3ef]">{label}</Link>
-          ))}
-        </nav>
-        <form action={logout} className="mt-6"><button className="text-sm text-gray-500 underline">Sign out</button></form>
+        <div className="flex-1 overflow-y-auto px-3 pb-4 pt-2 [scrollbar-color:rgba(255,255,255,0.15)_transparent]">
+          <SidebarNav />
+        </div>
+        <div className="flex items-center justify-between border-t border-side-line px-3 py-2.5">
+          <form action={logout}>
+            <button className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] font-medium text-side-muted transition-colors hover:bg-side-hover hover:text-side-ink">
+              <LogOut className="h-4 w-4" aria-hidden />Sign out
+            </button>
+          </form>
+          <ThemeToggle />
+        </div>
       </aside>
-      <main className="flex-1 p-6">{children}</main>
+      <main id="main" className="min-w-0 flex-1">{children}</main>
     </div>
   );
 }

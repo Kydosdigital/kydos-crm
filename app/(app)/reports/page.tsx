@@ -1,12 +1,13 @@
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import Link from "next/link";
+import { CalendarCheck, Clock, Trophy, UserPlus, UserX } from "lucide-react";
+import { Badge, Card, CardTitle, Meter, Page, PageHeader, Segmented, Stat, TableCard } from "@/components/ui";
 
 const ago = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
 const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
 const mins = (m: number | null) => (m === null ? "n/a" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} days`);
-const Bar = ({ v, max }: { v: number; max: number }) => <div className="h-2 rounded bg-[#1f3a5f]" style={{ width: `${max ? Math.max(2, (v / max) * 100) : 0}%` }} />;
+const Bar = ({ v, max }: { v: number; max: number }) => <Meter value={v} max={max} />;
 
 export default async function Reports({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const { ws } = await requireWorkspace();
@@ -60,49 +61,52 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const maxWk = Math.max(1, ...wk.map(([, v]) => v));
   const att = (bookings ?? []).filter((b) => b.status === "attended").length, ns = (bookings ?? []).filter((b) => b.status === "no_show").length;
 
+  const kpis = [["New leads", String((contacts ?? []).length), UserPlus], ["Median time to first message", mins(median(waits)), Clock], ["Never contacted", String(never), UserX], ["Win rate", winRate === null ? "n/a" : `${winRate}%`, Trophy]] as const;
+
   return (
-    <div className="max-w-5xl">
-      <div className="mb-4 flex items-end justify-between">
-        <div><h1 className="text-2xl font-semibold">Reports</h1><p className="text-sm text-gray-500">{ws.name}. Leads and replies for the last {days} days. See Analytics for email and WhatsApp engagement.</p></div>
-        <div className="flex gap-2 text-sm">{[30, 90, 365].map((d) => <Link key={d} href={`/reports?days=${d}`} className={`rounded border px-2 py-1 ${d === days ? "bg-black text-white" : ""}`}>{d}d</Link>)}</div>
+    <Page>
+      <PageHeader
+        title="Reports"
+        description={<>{ws.name}. Leads and replies for the last {days} days. See Analytics for email and WhatsApp engagement.</>}
+        actions={<Segmented label="Date range" items={[30, 90, 365].map((d) => ({ href: `/reports?days=${d}`, label: `${d}d`, active: d === days }))} />}
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {kpis.map(([l, v, icon]) => <Stat key={l} label={l} value={v} icon={icon} tone={l === "Never contacted" && never > 0 ? "warning" : "brand"} />)}
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[["New leads", String((contacts ?? []).length)], ["Median time to first message", mins(median(waits))], ["Never contacted", String(never)], ["Win rate", winRate === null ? "n/a" : `${winRate}%`]].map(([l, v]) => (
-          <div key={l} className="rounded border p-3"><div className="text-xs text-gray-500">{l}</div><div className="text-xl font-semibold">{v}</div></div>
-        ))}
-      </div>
+      <TableCard className="mb-6">
+        <div className="px-5 pb-1 pt-4"><CardTitle>Lead sources</CardTitle></div>
+        <table className="table"><thead><tr><th>Source</th><th className="w-2/5">Leads</th><th>Booked</th><th className="num">Won</th></tr></thead><tbody>
+          {sources.map(([k, v]) => <tr key={k}><td className="font-medium text-ink">{k}</td><td><div className="flex items-center gap-3"><Bar v={v.leads} max={maxLeads} /><span className="tabular w-8 shrink-0 text-right font-medium text-ink">{v.leads}</span></div></td><td className="tabular">{v.booked} <span className="text-muted">({v.leads ? Math.round((v.booked / v.leads) * 100) : 0}%)</span></td><td className="num">{v.won}</td></tr>)}
+          {!sources.length && <tr><td colSpan={4} className="!py-8 text-center text-muted">No leads in this period.</td></tr>}
+        </tbody></table>
+      </TableCard>
 
-      <h2 className="mb-2 font-semibold">Lead sources</h2>
-      <table className="mb-6 w-full text-left text-sm"><thead className="border-b text-gray-500"><tr><th className="py-1">Source</th><th className="w-1/3">Leads</th><th>Booked</th><th>Won</th></tr></thead><tbody>
-        {sources.map(([k, v]) => <tr key={k} className="border-b"><td className="py-1">{k}</td><td><div className="flex items-center gap-2"><div className="w-full"><Bar v={v.leads} max={maxLeads} /></div>{v.leads}</div></td><td>{v.booked} ({v.leads ? Math.round((v.booked / v.leads) * 100) : 0}%)</td><td>{v.won}</td></tr>)}
-        {!sources.length && <tr><td colSpan={4} className="py-2 text-gray-500">No leads in this period.</td></tr>}
-      </tbody></table>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
-          <h2 className="mb-2 font-semibold">Open pipeline by stage</h2>
-          <table className="w-full text-left text-sm"><tbody>
-            {stageRows.map((s) => <tr key={s.name} className="border-b"><td className="py-1">{s.name}</td><td className="w-1/3"><Bar v={s.v} max={maxStage} /></td><td>{s.n}</td><td className="text-right">{gbp(s.v)}</td></tr>)}
-            <tr className="font-semibold"><td className="py-1" colSpan={2}>Total open</td><td>{open.length}</td><td className="text-right">{gbp(open.reduce((t, o) => t + Number(o.value), 0))}</td></tr>
+      <div className="grid items-start gap-6 md:grid-cols-2">
+        <Card>
+          <CardTitle aside={<Badge tone="outline">{open.length} open</Badge>}>Open pipeline by stage</CardTitle>
+          <table className="w-full text-left text-[13px]"><tbody>
+            {stageRows.map((s) => <tr key={s.name} className="border-b border-line"><td className="py-2 pr-3 text-ink-2">{s.name}</td><td className="w-1/3"><Bar v={s.v} max={maxStage} /></td><td className="tabular px-3 text-right text-muted">{s.n}</td><td className="tabular text-right font-medium text-ink">{gbp(s.v)}</td></tr>)}
+            <tr className="font-semibold text-ink"><td className="pt-2.5" colSpan={2}>Total open</td><td className="tabular px-3 pt-2.5 text-right">{open.length}</td><td className="tabular pt-2.5 text-right">{gbp(open.reduce((t, o) => t + Number(o.value), 0))}</td></tr>
           </tbody></table>
-        </div>
-        <div>
-          <h2 className="mb-2 font-semibold">Won revenue by month</h2>
-          <table className="w-full text-left text-sm"><tbody>
-            {months.map(([m, v]) => <tr key={m} className="border-b"><td className="py-1">{m}</td><td className="w-1/2"><Bar v={v} max={maxMonth} /></td><td className="text-right">{gbp(v)}</td></tr>)}
-            {!months.length && <tr><td className="py-2 text-gray-500">No won deals yet. Move an opportunity to Won to see revenue.</td></tr>}
+        </Card>
+        <Card>
+          <CardTitle>Won revenue by month</CardTitle>
+          <table className="w-full text-left text-[13px]"><tbody>
+            {months.map(([m, v]) => <tr key={m} className="border-b border-line last:border-0"><td className="tabular py-2 pr-3 text-ink-2">{m}</td><td className="w-1/2"><Bar v={v} max={maxMonth} /></td><td className="tabular pl-3 text-right font-medium text-ink">{gbp(v)}</td></tr>)}
+            {!months.length && <tr><td className="py-4 text-muted">No won deals yet. Move an opportunity to Won to see revenue.</td></tr>}
           </tbody></table>
-        </div>
-        <div>
-          <h2 className="mb-2 font-semibold">Bookings per week (week starting)</h2>
-          <table className="w-full text-left text-sm"><tbody>
-            {wk.map(([w, n]) => <tr key={w} className="border-b"><td className="py-1">{w}</td><td className="w-1/2"><Bar v={n} max={maxWk} /></td><td className="text-right">{n}</td></tr>)}
-            {!wk.length && <tr><td className="py-2 text-gray-500">No bookings yet. Connect the Cal.com webhook in Settings.</td></tr>}
+        </Card>
+        <Card>
+          <CardTitle icon={CalendarCheck}>Bookings per week (week starting)</CardTitle>
+          <table className="w-full text-left text-[13px]"><tbody>
+            {wk.map(([w, n]) => <tr key={w} className="border-b border-line last:border-0"><td className="tabular py-2 pr-3 text-ink-2">{w}</td><td className="w-1/2"><Bar v={n} max={maxWk} /></td><td className="tabular pl-3 text-right font-medium text-ink">{n}</td></tr>)}
+            {!wk.length && <tr><td className="py-4 text-muted">No bookings yet. Connect the Cal.com webhook in Settings.</td></tr>}
           </tbody></table>
-          <p className="mt-2 text-sm text-gray-600">Attended {att}, no-show {ns}{att + ns ? `, show rate ${Math.round((att / (att + ns)) * 100)}%` : ""}. Mark outcomes on each contact.</p>
-        </div>
+          <p className="mt-3 border-t border-line pt-3 text-[13px] text-muted">Attended {att}, no-show {ns}{att + ns ? `, show rate ${Math.round((att / (att + ns)) * 100)}%` : ""}. Mark outcomes on each contact.</p>
+        </Card>
       </div>
-    </div>
+    </Page>
   );
 }

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireWorkspace } from "@/lib/workspace";
+import { Flame, Info } from "lucide-react";
+import { Avatar, Badge, CardTitle, ChannelIcon, Page, PageHeader, Segmented, Section, TableCard } from "@/components/ui";
 import { analyse, loadEngagement, pct, STATE_LABEL, type State } from "@/lib/engagement";
 
 const order: State[] = ["reply_waiting", "clicked", "opened", "unseen", "replied", "booked", "cold", "bounced", "new"];
@@ -11,50 +13,59 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
   const a = analyse(msgs, events, contacts);
   const hot = a.rows.filter((r) => r.score > 0).sort((x, y) => y.score - x.score).slice(0, 15);
   const name = (c: { first_name: string | null; last_name: string | null; email: string | null }) => [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "Unknown";
-  const funnel = (title: string, f: typeof a.email, opened: string) => (
-    <div key={title} className="rounded border p-3">
-      <div className="mb-2 font-semibold">{title}</div>
-      <table className="w-full text-sm"><tbody>
+  const funnel = (title: string, f: typeof a.email, opened: string, channel: string) => (
+    <div key={title} className="card p-5">
+      <div className="mb-4 flex items-center justify-between"><ChannelIcon channel={channel} label /><span className="text-xs text-muted">{f.sent} sent</span></div>
+      <table className="w-full text-[13px]"><tbody>
         {[["Sent", f.sent, ""], ["Delivered", f.delivered, pct(f.delivered, f.sent)], [opened, f.opened, pct(f.opened, f.sent)], ["Clicked", f.clicked, pct(f.clicked, f.sent)], ["Replied (within 7 days)", f.replied, pct(f.replied, f.sent)], ["Failed", f.failed, ""]].map(([l, n, p]) => (
-          <tr key={String(l)} className="border-b last:border-0"><td className="py-1">{l}</td><td className="text-right">{n}</td><td className="w-14 text-right text-gray-500">{p}</td></tr>
+          <tr key={String(l)}>
+            <td className="py-1.5">
+              <div className="flex items-baseline justify-between gap-2"><span className={l === "Failed" && Number(n) > 0 ? "text-danger-ink" : "text-ink-2"}>{l}</span><span className="tabular"><span className="font-semibold text-ink">{n}</span><span className="ml-2 inline-block w-9 text-right text-xs text-muted">{p}</span></span></div>
+              <div className="meter mt-1.5 !h-1"><span className={l === "Failed" ? "!bg-danger" : ""} style={{ width: `${f.sent ? Math.min(100, (Number(n) / f.sent) * 100) : 0}%` }} /></div>
+            </td>
+          </tr>
         ))}
       </tbody></table>
     </div>
   );
+  const TONE: Partial<Record<State, "brand" | "violet" | "warning" | "danger" | "success" | "info">> = { reply_waiting: "brand", clicked: "violet", opened: "violet", replied: "success", booked: "success", cold: "info", bounced: "danger", unseen: "warning" };
   return (
-    <div className="max-w-5xl">
-      <div className="mb-4 flex items-end justify-between">
-        <div><h1 className="text-2xl font-semibold">Analytics</h1><p className="text-sm text-gray-500">{ws.name}, last {days} days</p></div>
-        <div className="flex gap-2 text-sm">{[7, 30, 90].map((d) => <Link key={d} href={`/analytics?days=${d}`} className={`rounded border px-2 py-1 ${d === days ? "bg-black text-white" : ""}`}>{d}d</Link>)}</div>
+    <Page>
+      <PageHeader
+        title="Analytics"
+        description={<>{ws.name}, last {days} days</>}
+        actions={<Segmented label="Date range" items={[7, 30, 90].map((d) => ({ href: `/analytics?days=${d}`, label: `${d}d`, active: d === days }))} />}
+      />
+      <div className="mb-3 grid gap-4 md:grid-cols-3">
+        {funnel("Email", a.email, "Opened (indicative)", "email")}
+        {funnel("WhatsApp", a.whatsapp, "Read", "whatsapp")}
+        {funnel("SMS", a.sms, "Opened", "sms")}
       </div>
-      <div className="mb-6 grid gap-3 md:grid-cols-3">
-        {funnel("Email", a.email, "Opened (indicative)")}
-        {funnel("WhatsApp", a.whatsapp, "Read")}
-        {funnel("SMS", a.sms, "Opened")}
-      </div>
-      <p className="mb-6 text-xs text-gray-500">Email opens are indicative: Apple Mail and some gateways pre-load images, so we exclude opens within seconds of sending, but clicks and replies are the reliable signals.</p>
+      <p className="mb-8 flex items-start gap-1.5 text-xs leading-relaxed text-muted"><Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />Email opens are indicative: Apple Mail and some gateways pre-load images, so we exclude opens within seconds of sending, but clicks and replies are the reliable signals.</p>
 
-      <h2 className="mb-2 font-semibold">Where contacts are now</h2>
-      <div className="mb-6 flex flex-wrap gap-2">
-        {order.filter((s) => a.states.get(s)).map((s) => <div key={s} className="rounded border px-3 py-2 text-sm"><div className="text-xl font-semibold">{a.states.get(s)}</div>{STATE_LABEL[s]}</div>)}
-      </div>
+      <Section title="Where contacts are now" className="mb-8">
+        <div className="flex flex-wrap gap-3">
+          {order.filter((s) => a.states.get(s)).map((s) => <div key={s} className="card min-w-36 px-4 py-3"><div className="tabular text-2xl font-semibold leading-none tracking-tight text-ink">{a.states.get(s)}</div><div className="mt-2"><Badge tone={TONE[s] ?? "neutral"} dot>{STATE_LABEL[s]}</Badge></div></div>)}
+          {!order.some((s) => a.states.get(s)) && <p className="text-[13px] text-muted">No contacts messaged in this period.</p>}
+        </div>
+      </Section>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
-          <h2 className="mb-2 font-semibold">Hot leads</h2>
-          <table className="w-full text-left text-sm"><thead className="border-b text-gray-500"><tr><th className="py-1">Contact</th><th>Status</th><th>Score</th></tr></thead><tbody>
-            {hot.map((r) => <tr key={r.contact.id} className="border-b"><td className="py-1"><Link className="underline" href={`/contacts/${r.contact.id}`}>{name(r.contact)}</Link></td><td>{STATE_LABEL[r.state]}</td><td>{r.score}</td></tr>)}
-            {!hot.length && <tr><td className="py-2 text-gray-500" colSpan={3}>No engagement yet.</td></tr>}
+      <div className="grid items-start gap-6 md:grid-cols-2">
+        <TableCard>
+          <div className="px-5 pb-1 pt-4"><CardTitle icon={Flame}>Hot leads</CardTitle></div>
+          <table className="table table-compact"><thead><tr><th>Contact</th><th>Status</th><th className="num">Score</th></tr></thead><tbody>
+            {hot.map((r) => <tr key={r.contact.id}><td><Link className="link-quiet flex items-center gap-2.5" href={`/contacts/${r.contact.id}`}><Avatar name={name(r.contact)} size="sm" />{name(r.contact)}</Link></td><td><Badge tone={TONE[r.state] ?? "neutral"} dot>{STATE_LABEL[r.state]}</Badge></td><td className="num font-semibold text-ink">{r.score}</td></tr>)}
+            {!hot.length && <tr><td className="!py-8 text-center text-muted" colSpan={3}>No engagement yet.</td></tr>}
           </tbody></table>
-        </div>
-        <div>
-          <h2 className="mb-2 font-semibold">Subject lines</h2>
-          <table className="w-full text-left text-sm"><thead className="border-b text-gray-500"><tr><th className="py-1">Subject</th><th>Sent</th><th>Opened</th><th>Clicked</th></tr></thead><tbody>
-            {a.subjects.map((s) => <tr key={s.subject} className="border-b"><td className="py-1">{s.subject}</td><td>{s.sent}</td><td>{s.opened}</td><td>{s.clicked}</td></tr>)}
-            {!a.subjects.length && <tr><td className="py-2 text-gray-500" colSpan={4}>No emails sent yet.</td></tr>}
+        </TableCard>
+        <TableCard>
+          <div className="px-5 pb-1 pt-4"><CardTitle>Subject lines</CardTitle></div>
+          <table className="table table-compact"><thead><tr><th>Subject</th><th className="num">Sent</th><th className="num">Opened</th><th className="num">Clicked</th></tr></thead><tbody>
+            {a.subjects.map((s) => <tr key={s.subject}><td className="text-ink">{s.subject}</td><td className="num">{s.sent}</td><td className="num">{s.opened}</td><td className="num">{s.clicked}</td></tr>)}
+            {!a.subjects.length && <tr><td className="!py-8 text-center text-muted" colSpan={4}>No emails sent yet.</td></tr>}
           </tbody></table>
-        </div>
+        </TableCard>
       </div>
-    </div>
+    </Page>
   );
 }

@@ -22,20 +22,30 @@ export default function FormClient({ slug, workspace, form, embed }: { slug: str
     if (r.ok) { setState("done"); if (embed) window.parent.postMessage({ type: "kydos-form-done", slug }, "*"); }
     else { setErr((await r.json().catch(() => ({}))).error ?? "Something went wrong"); setState("error"); }
   }
-  if (state === "done") return <p className="text-center text-lg">{form.success}</p>;
+  if (state === "done") return (
+    <div className="py-6 text-center" role="status">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-success-ink">
+        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+      </div>
+      <p className="font-display text-2xl leading-snug text-ink">{form.success}</p>
+    </div>
+  );
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3 text-sm">
-      <h1 className="text-xl font-semibold">{form.headline}</h1>
-      {form.intro && <p className="text-gray-600">{form.intro}</p>}
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <div>
+        <h1 className="font-display text-[32px] leading-[1.1] tracking-tight text-ink">{form.headline}</h1>
+        {form.intro && <p className="mt-2 text-[14px] leading-relaxed text-muted">{form.intro}</p>}
+      </div>
       {form.fields.map((f) => (
-        <label key={f.key} className="flex flex-col gap-1">{f.label}{f.required ? " *" : ""}
-          {f.type === "textarea" ? <textarea name={f.key} required={f.required} rows={3} className="rounded border p-2" />
-            : <input name={f.key} type={f.type} required={f.required} className="rounded border p-2" />}
+        <label key={f.key} className="block">
+          <span className="label">{f.label}{f.required ? <span className="text-danger" aria-hidden> *</span> : <span className="font-normal text-faint"> (optional)</span>}</span>
+          {f.type === "textarea" ? <textarea name={f.key} required={f.required} rows={3} className="textarea !text-sm" />
+            : <input name={f.key} type={f.type} required={f.required} className="input !h-11 !text-sm" />}
         </label>
       ))}
-      <label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" name="consent" required className="mt-0.5" />{form.consent}</label>
-      {state === "error" && <p className="text-red-600">{err}</p>}
-      <button disabled={state === "sending"} className="rounded bg-[#1f3a5f] px-3 py-2 font-medium text-white disabled:opacity-60">{state === "sending" ? "Sending..." : form.button}</button>
+      <label className="check-row !text-xs !leading-relaxed text-muted"><input type="checkbox" name="consent" required className="checkbox" />{form.consent}</label>
+      {state === "error" && <p role="alert" className="alert alert-danger">{err}</p>}
+      <button disabled={state === "sending"} className="btn btn-primary btn-lg w-full">{state === "sending" ? "Sending..." : form.button}</button>
     </form>
   );
 }

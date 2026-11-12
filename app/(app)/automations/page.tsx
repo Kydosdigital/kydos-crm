@@ -3,6 +3,18 @@ import { supabaseServer } from "@/lib/supabase/server";
 import Link from "next/link";
 import { stepsToText } from "@/lib/automationSteps";
 import { createAutomation, toggleAutomation, duplicateAutomation } from "../../actions";
+import { Bell, CheckSquare, Clock, Copy, GitBranch, KanbanSquare, Mail, MessageCircle, MessageSquareText, OctagonX, Pause, Pencil, Play, Plus, Shuffle, SlidersHorizontal, Tag, UserCheck, Webhook, Workflow, Zap, type LucideIcon } from "lucide-react";
+import { Alert, Badge, EmptyState, Field, Page, PageHeader, humanise } from "@/components/ui";
+import { Modal } from "@/components/ui/modal";
+import { StepReference } from "./step-reference";
+
+const STEP_ICON: Record<string, LucideIcon> = {
+  send_email: Mail, send_sms: MessageSquareText, send_whatsapp: MessageCircle, notify: Bell, webhook: Webhook,
+  wait: Clock, wait_weekday: Clock, wait_until: Clock, wait_before: Clock, wait_after: Clock,
+  skip_if: GitBranch, skip_unless: GitBranch, split: Shuffle, stop_if_replied: OctagonX, end: OctagonX,
+  add_tag: Tag, remove_tag: Tag, create_task: CheckSquare, move_stage: KanbanSquare, create_opportunity: KanbanSquare,
+  assign_owner: UserCheck, set_field: SlidersHorizontal, enrol: Workflow,
+};
 
 const example = `send_email: Thanks for getting in touch | Hi {{first_name}},\\n\\nThanks for your enquiry. We will be in touch shortly.
 wait: 48
@@ -21,52 +33,87 @@ export default async function Automations({ searchParams }: { searchParams: Prom
   ]);
 
   return (
-    <div className="max-w-3xl">
-      <h1 className="mb-4 text-2xl font-semibold">Automations</h1>
-      {saved && <p className="mb-3 rounded bg-green-50 p-2 text-sm text-green-700">Saved.</p>}
-      {(autos ?? []).map((a) => {
-        const r = (runs ?? []).filter((x) => x.automation_id === a.id);
-        return (
-          <div key={a.id} className="mb-4 rounded border p-3">
-            <div className="flex items-center justify-between">
-              <div><span className="font-semibold">{a.name}</span> <span className="text-xs text-gray-500">trigger: {a.trigger_type} {JSON.stringify(a.trigger_config)}</span></div>
-              <div className="flex gap-2"><Link href={`/automations/${a.id}`} className="rounded border px-2 text-sm">Edit</Link><form action={duplicateAutomation}><input type="hidden" name="id" value={a.id} /><button className="rounded border px-2 text-sm">Duplicate</button></form><form action={toggleAutomation}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="active" value={String(!a.active)} /><button className="rounded border px-2 text-sm">{a.active ? "Pause" : "Resume"}</button></form></div>
+    <Page>
+      <PageHeader
+        title="Automations"
+        description="Follow-up sequences that start from a trigger and run step by step for each contact."
+        actions={
+          <Modal wide trigger={<><Plus aria-hidden />New automation</>} title="New automation">
+            <form action={createAutomation} className="flex flex-col gap-3">
+              <Field label="Name"><input name="name" placeholder="Name, e.g. New lead follow-up" required className="input" /></Field>
+              <div className="grid grid-cols-[14rem_minmax(0,1fr)] gap-3">
+                <Field label="Trigger">
+                  <select name="trigger_type" className="select">
+                    <option value="contact_created">New contact</option>
+                    <option value="tag_added">Tag added</option>
+                    <option value="form_submitted">Form submitted</option>
+                    <option value="stage_changed">Stage changed (any)</option>
+                    <option value="booking_created">Booking made (Cal.com)</option>
+                    <option value="booking_cancelled">Booking cancelled</option>
+                    <option value="missed_call">Missed call (Twilio)</option>
+                    <option value="date_reached">Date reached (custom date field)</option>
+                    <option value="reply_received">Reply received (any channel)</option>
+                    <option value="email_opened">Email opened</option>
+                    <option value="email_clicked">Email link clicked</option>
+                    <option value="invoice_paid">Invoice or retainer paid</option>
+                    <option value="deal_won">Deal won</option>
+                    <option value="deal_lost">Deal lost</option>
+                    <option value="proposal_accepted">Proposal accepted</option>
+                  </select>
+                </Field>
+                <Field label="Trigger value" hint="Date trigger: field_key, days offset, e.g. renewal_date, -7 (add ,yearly for birthdays).">
+                  <input name="trigger_value" placeholder="Tag or form slug (optional). Date trigger: field_key, days offset, e.g. renewal_date, -7 (add ,yearly for birthdays)" className="input" />
+                </Field>
+              </div>
+              <Field label="Steps"><textarea name="steps" rows={8} defaultValue={example} spellCheck={false} className="textarea !font-mono !text-xs" /></Field>
+              <StepReference />
+              <button className="btn btn-primary self-start">Create automation</button>
+            </form>
+          </Modal>
+        }
+      />
+      {saved && <Alert tone="success">Saved.</Alert>}
+      {(autos ?? []).length === 0 && <div className="card"><EmptyState icon={Workflow} title="No automations yet">Create your first sequence with the New automation button, for example a follow-up for every new lead.</EmptyState></div>}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        {(autos ?? []).map((a) => {
+          const r = (runs ?? []).filter((x) => x.automation_id === a.id);
+          const mine = (steps ?? []).filter((s) => s.automation_id === a.id);
+          const cfg = JSON.stringify(a.trigger_config);
+          return (
+            <div key={a.id} className={`card overflow-hidden ${a.active ? "" : "opacity-80"}`}>
+              <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2"><span className="truncate text-[15px] font-semibold text-ink">{a.name}</span>{a.active ? <Badge tone="success" dot>Active</Badge> : <Badge dot>Paused</Badge>}</div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted"><Zap className="h-3.5 w-3.5 text-warning-ink" aria-hidden /><span>trigger:</span><Badge tone="outline">{humanise(a.trigger_type)}</Badge>{cfg && cfg !== "{}" && cfg !== "null" && <code>{cfg}</code>}</div>
+                </div>
+                <div className="flex shrink-0 gap-1"><Link href={`/automations/${a.id}`} className="btn btn-secondary btn-sm"><Pencil aria-hidden />Edit</Link><form action={duplicateAutomation}><input type="hidden" name="id" value={a.id} /><button className="btn btn-ghost btn-sm"><Copy aria-hidden />Duplicate</button></form><form action={toggleAutomation}><input type="hidden" name="id" value={a.id} /><input type="hidden" name="active" value={String(!a.active)} /><button className="btn btn-ghost btn-sm">{a.active ? <Pause aria-hidden /> : <Play aria-hidden />}{a.active ? "Pause" : "Resume"}</button></form></div>
+              </div>
+              <ol className="flex flex-col px-5 py-4">
+                {mine.map((s, i) => {
+                  const text = stepsToText([s as { type: string; config: Record<string, unknown> }]).replace(/\\n/g, " ").slice(0, 160);
+                  const cut = text.indexOf(":");
+                  const type = (cut > 0 ? text.slice(0, cut) : text).trim();
+                  const rest = cut > 0 ? text.slice(cut + 1).trim() : "";
+                  const Icon = STEP_ICON[type] ?? Workflow;
+                  return (
+                    <li key={s.id} className="relative flex gap-3 pb-3 last:pb-0">
+                      {i < mine.length - 1 && <span aria-hidden className="absolute bottom-0 left-[13px] top-7 w-px bg-line" />}
+                      <span className="flex h-[27px] w-[27px] shrink-0 items-center justify-center rounded-lg border border-line bg-sunken text-muted"><Icon className="h-3.5 w-3.5" aria-hidden /></span>
+                      <div className="min-w-0 pt-[3px] text-[13px] leading-snug"><span className="font-medium text-ink">{humanise(type)}</span>{rest && <span className="ml-1.5 break-words text-muted">{rest}{type === "wait" && /^\d+(\.\d+)?$/.test(rest) ? " hours" : ""}</span>}</div>
+                    </li>
+                  );
+                })}
+                {mine.length === 0 && <li className="text-[13px] text-muted">No steps yet.</li>}
+              </ol>
+              <div className="flex gap-4 border-t border-line bg-sunken px-5 py-2.5 text-xs text-muted">
+                <span><b className="tabular font-semibold text-ink">{r.filter((x) => x.status === "active").length}</b> running</span>
+                <span><b className="tabular font-semibold text-ink">{r.filter((x) => x.status === "done").length}</b> done</span>
+                <span><b className="tabular font-semibold text-ink">{r.filter((x) => x.status === "stopped").length}</b> stopped</span>
+              </div>
             </div>
-            <ol className="ml-5 mt-2 list-decimal text-sm text-gray-700">
-              {(steps ?? []).filter((s) => s.automation_id === a.id).map((s) => <li key={s.id}>{stepsToText([s as { type: string; config: Record<string, unknown> }]).replace(/\\n/g, " ").slice(0, 160)}</li>)}
-            </ol>
-            <p className="mt-2 text-xs text-gray-500">{r.filter((x) => x.status === "active").length} running, {r.filter((x) => x.status === "done").length} done, {r.filter((x) => x.status === "stopped").length} stopped</p>
-          </div>
-        );
-      })}
-
-      <h2 className="mb-2 mt-8 font-semibold">New automation</h2>
-      <form action={createAutomation} className="flex flex-col gap-2">
-        <input name="name" placeholder="Name, e.g. New lead follow-up" required className="rounded border p-2" />
-        <div className="flex gap-2">
-          <select name="trigger_type" className="rounded border p-2">
-            <option value="contact_created">New contact</option>
-            <option value="tag_added">Tag added</option>
-            <option value="form_submitted">Form submitted</option>
-            <option value="stage_changed">Stage changed (any)</option>
-            <option value="booking_created">Booking made (Cal.com)</option>
-            <option value="booking_cancelled">Booking cancelled</option>
-            <option value="missed_call">Missed call (Twilio)</option>
-            <option value="date_reached">Date reached (custom date field)</option>
-            <option value="reply_received">Reply received (any channel)</option>
-            <option value="email_opened">Email opened</option>
-            <option value="email_clicked">Email link clicked</option>
-            <option value="invoice_paid">Invoice or retainer paid</option>
-            <option value="deal_won">Deal won</option>
-            <option value="deal_lost">Deal lost</option>
-            <option value="proposal_accepted">Proposal accepted</option>
-          </select>
-          <input name="trigger_value" placeholder="Tag or form slug (optional). Date trigger: field_key, days offset, e.g. renewal_date, -7 (add ,yearly for birthdays)" className="flex-1 rounded border p-2" />
-        </div>
-        <textarea name="steps" rows={8} defaultValue={example} className="rounded border p-2 font-mono text-sm" />
-        <p className="text-xs text-gray-500">One step per line. Branching: skip_if: cond | n and skip_unless: cond | n skip the next n steps; wait_until: cond | hours waits for a goal (or times out); end stops the run. Conditions: replied, opened, clicked, failed, tag:x, stage:Name, field:key=value, booked, booking_active, no_show, attended (prefix ! to negate). Bookings: wait_before: hours | skip_n (skips n steps if already too late), wait_after: hours. webhook: https://url (signed POST). Merge tags (double curly braces around the name): first_name, review_link, booking_link, booking_date, booking_time, feedback_link, business and any custom field key. Steps: send_email: Subject | Body, send_sms: Body, wait: hours, stop_if_replied, add_tag: x, remove_tag: x, create_task: title, move_stage: Stage name, notify: Subject | Body (emails you), create_opportunity: Title | value | Stage, wait_weekday: 9 (next weekday at 9am), enrol: Other automation name, assign_owner: teammate@email.com (or round_robin), set_field: key = value, split: 50 | n (50% of contacts skip the next n steps, for split tests), send_whatsapp: template_name | first_name tag | other variables (approved Meta template). Use {"{{first_name}}"}.</p>
-        <button className="self-start rounded bg-black px-4 py-2 text-white">Create automation</button>
-      </form>
-    </div>
+          );
+        })}
+      </div>
+    </Page>
   );
 }

@@ -1,6 +1,9 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifyUnsubToken } from "@/lib/messaging";
 import { notifyOwner } from "@/lib/notify";
+import { Heart, LinkIcon } from "lucide-react";
+import { ClientShell, PublicHeading, ResultCard } from "@/components/shell/public-shell";
+import { Field } from "@/components/ui";
 
 // Private feedback page linked from review request emails. It does not filter who is sent to Google:
 // the review email always carries the public review link too.
@@ -22,21 +25,35 @@ export default async function Feedback({ params, searchParams }: { params: Promi
   const { t, sent } = await searchParams;
   const ok = !!t && verifyUnsubToken(contact, t);
   return (
-    <main className="mx-auto max-w-md p-10">
-      {!ok ? <h1 className="text-center text-xl font-semibold">This link is not valid</h1> : sent ? (
-        <><h1 className="text-xl font-semibold">Thank you</h1><p className="mt-2 text-gray-600">Your feedback has gone straight to the team.</p></>
+    <ClientShell width="sm" center>
+      {!ok ? (
+        <ResultCard tone="neutral" icon={<LinkIcon aria-hidden />} title="This link is not valid">Please use the link from the most recent email we sent you.</ResultCard>
+      ) : sent ? (
+        <ResultCard icon={<Heart aria-hidden />} title="Thank you">Your feedback has gone straight to the team.</ResultCard>
       ) : (
-        <>
-          <h1 className="text-xl font-semibold">How did we do?</h1>
-          <p className="mb-4 mt-1 text-sm text-gray-600">Tell us privately. We read every message.</p>
-          <form action={async (fd) => { "use server"; await submit(fd); const { redirect } = await import("next/navigation"); redirect(`/f/${contact}?t=${t}&sent=1`); }} className="flex flex-col gap-3">
+        <div className="card p-7 shadow-md sm:p-9">
+          <PublicHeading title="How did we do?">Tell us privately. We read every message.</PublicHeading>
+          <form action={async (fd) => { "use server"; await submit(fd); const { redirect } = await import("next/navigation"); redirect(`/f/${contact}?t=${t}&sent=1`); }} className="flex flex-col gap-5">
             <input type="hidden" name="c" value={contact} /><input type="hidden" name="t" value={t} />
-            <select name="rating" className="rounded border p-2" defaultValue="5">{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{n} out of 5</option>)}</select>
-            <textarea name="text" rows={5} placeholder="What went well, and what could be better?" className="rounded border p-2" />
-            <button className="rounded bg-black px-4 py-2 text-white">Send feedback</button>
+            <fieldset>
+              <legend className="label">Your rating</legend>
+              <div className="grid grid-cols-5 gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <label key={n} className="cursor-pointer">
+                    <input type="radio" name="rating" value={n} defaultChecked={n === 5} className="peer sr-only" />
+                    <span className="flex h-12 items-center justify-center rounded-[10px] border border-line-strong bg-surface text-base font-semibold text-ink-2 shadow-xs transition-colors hover:border-faint peer-checked:border-brand peer-checked:bg-brand peer-checked:text-on-brand peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-text">{n}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="hint mt-1.5 flex justify-between"><span>Poor</span><span>Excellent</span></div>
+            </fieldset>
+            <Field label="Your feedback">
+              <textarea name="text" rows={5} placeholder="What went well, and what could be better?" className="textarea !text-sm" />
+            </Field>
+            <button className="btn btn-primary btn-lg w-full">Send feedback</button>
           </form>
-        </>
+        </div>
       )}
-    </main>
+    </ClientShell>
   );
 }
