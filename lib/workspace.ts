@@ -12,6 +12,8 @@ export type Ws = {
   business_address: string | null;
   notify_email: string | null;
   agent_mode: string;
+  booking_link: string | null;
+  review_link: string | null;
 };
 
 /** Returns the signed-in user's workspaces and the active one (from the `ws` cookie, else the first). */

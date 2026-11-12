@@ -52,6 +52,8 @@ export async function updateSettings(fd: FormData) {
       whatsapp_from: s(fd, "whatsapp_from"),
       business_address: s(fd, "business_address"),
       notify_email: s(fd, "notify_email"),
+      booking_link: s(fd, "booking_link"),
+      review_link: s(fd, "review_link"),
     })
     .eq("id", ws.id);
   revalidatePath("/settings");
@@ -160,7 +162,7 @@ export async function moveOpportunity(fd: FormData) {
   const oppId = String(fd.get("id"));
   const { data: stage } = await db.from("stages").select("name").eq("id", stageId).single();
   const status = stage?.name === "Won" ? "won" : stage?.name === "Lost" ? "lost" : "open";
-  const { data: opp } = await db.from("opportunities").update({ stage_id: stageId, status }).eq("id", oppId).select("contact_id").single();
+  const { data: opp } = await db.from("opportunities").update({ stage_id: stageId, status, closed_at: status === "open" ? null : new Date().toISOString() }).eq("id", oppId).select("contact_id").single();
   if (opp) await fireTrigger(ws.id, opp.contact_id, { type: "stage_changed", stage_id: stageId });
   revalidatePath("/pipeline");
 }
@@ -203,6 +205,17 @@ export async function createAutomation(fd: FormData) {
     } else if (t === "wait_weekday") config = { hour: Number(arg) || 9 };
     else if (t === "enrol") config = { automation: arg };
     else if (t === "move_stage") config = { stage: arg };
+    else if (t === "skip_if" || t === "skip_unless") {
+      const [cond, n] = arg.split("|").map((x) => x.trim());
+      config = { cond, n: Number(n) || 1 };
+    } else if (t === "wait_until") {
+      const [cond, hours] = arg.split("|").map((x) => x.trim());
+      config = { cond, hours: Number(hours) || 24 };
+    } else if (t === "wait_before") {
+      const [hours, skip] = arg.split("|").map((x) => x.trim());
+      config = { hours: Number(hours) || 24, skip: Number(skip) || 0 };
+    } else if (t === "wait_after") config = { hours: Number(arg) || 1 };
+    else if (t === "webhook") config = { url: arg };
     return { automation_id: a.id, workspace_id: ws.id, position, type: t, config };
   });
   if (steps.length) await db.from("automation_steps").insert(steps);
@@ -267,11 +280,19 @@ export async function sendBroadcast(fd: FormData) {
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
   const tag = s(fd, "tag");
+  const listId = s(fd, "list");
   const subject = s(fd, "subject");
   const body = s(fd, "body");
-  if (!tag || !subject || !body) redirect("/broadcast?error=Tag, subject and message are all required");
-  if (fd.get("confirm") !== "on") redirect(`/broadcast?tag=${encodeURIComponent(tag!)}&error=Tick the consent confirmation first`);
-  const { data: list } = await db.from("contacts").select("*").eq("workspace_id", ws.id).contains("tags", [tag!]).eq("email_opt_out", false).not("email", "is", null).limit(90);
+  if ((!tag && !listId) || !subject || !body) redirect("/broadcast?error=Audience, subject and message are all required");
+  if (fd.get("confirm") !== "on") redirect(`/broadcast?${listId ? `list=${listId}` : `tag=${encodeURIComponent(tag!)}`}&error=Tick the consent confirmation first`);
+  let list: Awaited<ReturnType<typeof import("@/lib/lists").matchList>> | null;
+  if (listId) {
+    const { data: l } = await db.from("smart_lists").select("*").eq("id", listId).eq("workspace_id", ws.id).single();
+    list = l ? (await (await import("@/lib/lists")).matchList(ws.id, l.filter)).filter((c) => c.email && !c.email_opt_out).slice(0, 90) : [];
+  } else {
+    const r = await db.from("contacts").select("*").eq("workspace_id", ws.id).contains("tags", [tag!]).eq("email_opt_out", false).not("email", "is", null).limit(90);
+    list = r.data as typeof list;
+  }
   let sent = 0;
   for (const c of list ?? []) {
     const r = await sendEmail(ws, c, render(subject!, c), render(body!, c));
@@ -416,4 +437,71 @@ export async function askAgentToDraft(fd: FormData) {
   const row = analyse(msgs, events, contacts).rows.find((r) => r.contact.id === String(fd.get("contact_id")));
   if (row) await draftFor(ws as never, row.contact.id, row.state);
   revalidatePath("/agent");
+}
+
+
+// ───────── Custom fields, smart lists, bookings ─────────
+export async function saveField(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const label = s(fd, "label");
+  if (!label) return;
+  const key = (s(fd, "key") ?? label).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const options = (s(fd, "options") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  await (await supabaseServer()).from("custom_fields").upsert({ workspace_id: ws.id, key, label, type: String(fd.get("type") ?? "text"), options }, { onConflict: "workspace_id,key" });
+  revalidatePath("/lists");
+}
+export async function deleteField(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("custom_fields").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/lists");
+}
+export async function saveCustomValues(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const id = String(fd.get("contact_id"));
+  const { data: fields } = await db.from("custom_fields").select("key").eq("workspace_id", ws.id);
+  const custom: Record<string, string> = {};
+  for (const f of fields ?? []) { const v = s(fd, `cf_${f.key}`); if (v) custom[f.key] = v; }
+  await db.from("contacts").update({ custom }).eq("id", id).eq("workspace_id", ws.id);
+  revalidatePath(`/contacts/${id}`);
+}
+export async function saveList(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const split = (k: string) => (s(fd, k) ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  const filter = {
+    tags_any: split("tags_any"), tags_all: split("tags_all"), tags_none: split("tags_none"),
+    source: s(fd, "source") ?? undefined, state: s(fd, "state") ?? undefined,
+    has_email: fd.get("has_email") === "on", has_phone: fd.get("has_phone") === "on",
+    created_within_days: Number(fd.get("created_within_days")) || undefined,
+    field: s(fd, "field") ?? undefined, q: s(fd, "q") ?? undefined,
+  };
+  await (await supabaseServer()).from("smart_lists").insert({ workspace_id: ws.id, name: s(fd, "name") ?? "List", filter });
+  revalidatePath("/lists");
+}
+export async function deleteList(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("smart_lists").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/lists");
+}
+export async function enrolList(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const { matchList } = await import("@/lib/lists");
+  const db = await supabaseServer();
+  const { data: l } = await db.from("smart_lists").select("*").eq("id", String(fd.get("list_id"))).eq("workspace_id", ws.id).single();
+  const autoId = String(fd.get("automation_id"));
+  if (!l || !autoId) return;
+  const people = await matchList(ws.id, l.filter);
+  const admin = supabaseAdmin();
+  let n = 0;
+  for (const c of people.slice(0, 500)) {
+    const { data: active } = await admin.from("automation_runs").select("id").eq("automation_id", autoId).eq("contact_id", c.id).eq("status", "active").maybeSingle();
+    if (!active) { await admin.from("automation_runs").insert({ workspace_id: ws.id, automation_id: autoId, contact_id: c.id }); n++; }
+  }
+  redirect(`/lists?enrolled=${n}`);
+}
+export async function setBookingOutcome(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const id = String(fd.get("booking_id"));
+  await (await supabaseServer()).from("bookings").update({ status: String(fd.get("status")) }).eq("id", id).eq("workspace_id", ws.id);
+  revalidatePath(`/contacts/${String(fd.get("contact_id"))}`);
 }

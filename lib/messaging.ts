@@ -45,8 +45,10 @@ export function verifyUnsubToken(contactId: string, token: string) {
 }
 
 /** Replaces {{first_name}}, {{last_name}}, {{email}}, {{company}} placeholders. */
-export function render(template: string, c: Contact & { company?: string | null }) {
+export function render(template: string, c: Contact & { company?: string | null; custom?: Record<string, unknown> | null }, extra: Record<string, string> = {}) {
   const vars: Record<string, string> = {
+    ...Object.fromEntries(Object.entries(c.custom ?? {}).map(([k, v]) => [k, String(v ?? "")])),
+    ...extra,
     first_name: c.first_name ?? "there",
     last_name: c.last_name ?? "",
     email: c.email ?? "",

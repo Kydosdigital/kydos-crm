@@ -2,12 +2,19 @@ import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { sendBroadcast } from "../../actions";
 
-export default async function Broadcast({ searchParams }: { searchParams: Promise<{ tag?: string; error?: string; done?: string }> }) {
-  const { tag, error, done } = await searchParams;
+export default async function Broadcast({ searchParams }: { searchParams: Promise<{ tag?: string; list?: string; error?: string; done?: string }> }) {
+  const { tag, list, error, done } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
   let count: number | null = null;
-  if (tag) {
+  let listName: string | null = null;
+  if (list) {
+    const { data: l } = await db.from("smart_lists").select("*").eq("id", list).eq("workspace_id", ws.id).maybeSingle();
+    if (l) {
+      listName = l.name;
+      count = (await (await import("@/lib/lists")).matchList(ws.id, l.filter)).filter((c) => c.email && !c.email_opt_out).length;
+    }
+  } else if (tag) {
     const r = await db.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).contains("tags", [tag]).eq("email_opt_out", false).not("email", "is", null);
     count = r.count ?? 0;
   }
@@ -22,7 +29,7 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
       </form>
       {count !== null && <p className="mb-4 text-sm text-gray-700">{count} contacts with this tag can be emailed (opted-out contacts are excluded). Each send is capped at 90 to stay inside the free Resend daily limit of 100.</p>}
       <form action={sendBroadcast} className="flex flex-col gap-2">
-        <input name="tag" defaultValue={tag} placeholder="Tag" required className="rounded border p-2" />
+        {list ? <><input type="hidden" name="list" value={list} /><p className="text-sm">Sending to smart list: <b>{listName}</b></p></> : <input name="tag" defaultValue={tag} placeholder="Tag" required className="rounded border p-2" />}
         <input name="subject" placeholder="Subject" required className="rounded border p-2" />
         <textarea name="body" rows={8} placeholder="Message. You can use {{first_name}}." required className="rounded border p-2" />
         <label className="text-sm"><input type="checkbox" name="confirm" className="mr-2" />These contacts have opted in to marketing email (PECR)</label>

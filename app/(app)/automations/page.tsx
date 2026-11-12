@@ -45,11 +45,13 @@ export default async function Automations() {
             <option value="tag_added">Tag added</option>
             <option value="form_submitted">Form submitted</option>
             <option value="stage_changed">Stage changed (any)</option>
+            <option value="booking_created">Booking made (Cal.com)</option>
+            <option value="booking_cancelled">Booking cancelled</option>
           </select>
           <input name="trigger_value" placeholder="Tag name or form slug (optional)" className="flex-1 rounded border p-2" />
         </div>
         <textarea name="steps" rows={8} defaultValue={example} className="rounded border p-2 font-mono text-sm" />
-        <p className="text-xs text-gray-500">One step per line. Steps: send_email: Subject | Body, send_sms: Body, wait: hours, stop_if_replied, add_tag: x, remove_tag: x, create_task: title, move_stage: Stage name, notify: Subject | Body (emails you), create_opportunity: Title | value | Stage, wait_weekday: 9 (next weekday at 9am), enrol: Other automation name, send_whatsapp: template_name | first_name tag | other variables (approved Meta template). Use {"{{first_name}}"}.</p>
+        <p className="text-xs text-gray-500">One step per line. Branching: skip_if: cond | n and skip_unless: cond | n skip the next n steps; wait_until: cond | hours waits for a goal (or times out); end stops the run. Conditions: replied, opened, clicked, failed, tag:x, stage:Name, field:key=value, booked, booking_active, no_show, attended (prefix ! to negate). Bookings: wait_before: hours | skip_n (skips n steps if already too late), wait_after: hours. webhook: https://url (signed POST). Merge tags (double curly braces around the name): first_name, review_link, booking_link, booking_date, booking_time, feedback_link, business and any custom field key. Steps: send_email: Subject | Body, send_sms: Body, wait: hours, stop_if_replied, add_tag: x, remove_tag: x, create_task: title, move_stage: Stage name, notify: Subject | Body (emails you), create_opportunity: Title | value | Stage, wait_weekday: 9 (next weekday at 9am), enrol: Other automation name, send_whatsapp: template_name | first_name tag | other variables (approved Meta template). Use {"{{first_name}}"}.</p>
         <button className="self-start rounded bg-black px-4 py-2 text-white">Create automation</button>
       </form>
     </div>

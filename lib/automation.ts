@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { supabaseAdmin } from "./supabase/admin";
-import { render, sendEmail, sendSms } from "./messaging";
+import { render as baseRender, sendEmail, sendSms, unsubToken } from "./messaging";
+import { createHmac } from "crypto";
 import { notifyOwner } from "./notify";
 import { sendWhatsAppTemplate } from "./whatsapp";
 
@@ -21,10 +23,12 @@ export type TriggerEvent =
   | { type: "contact_created" }
   | { type: "tag_added"; tag: string }
   | { type: "stage_changed"; stage_id: string }
-  | { type: "form_submitted"; form: string };
+  | { type: "form_submitted"; form: string }
+  | { type: "booking_created" }
+  | { type: "booking_cancelled" };
 
 /** Call whenever something happens. Enrols the contact in every matching active automation. */
-export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent) {
+export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent, context: Record<string, unknown> = {}) {
   const db = supabaseAdmin();
   const { data: autos } = await db
     .from("automations")
@@ -45,8 +49,8 @@ export async function fireTrigger(workspaceId: string, contactId: string, ev: Tr
       .eq("contact_id", contactId)
       .eq("status", "active")
       .maybeSingle();
-    if (existing) continue;
-    await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId });
+    if (existing && !context.booking_id) continue;
+    await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
   }
 }
 
@@ -74,7 +78,49 @@ export async function processDueRuns(limit = 50) {
   return processed;
 }
 
-async function advance(run: { id: string; workspace_id: string; automation_id: string; contact_id: string; step_position: number; started_at: string }) {
+type Run = { id: string; workspace_id: string; automation_id: string; contact_id: string; step_position: number; started_at: string; context: Record<string, unknown> | null; wait_started_at: string | null };
+
+const SSRF = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1)/i;
+
+async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
+  const db = supabaseAdmin();
+  const neg = raw.trim().startsWith("!");
+  const cond = raw.trim().replace(/^!/, "").trim();
+  let r = false;
+  const [kind, ...restParts] = cond.split(":");
+  const rest = restParts.join(":").trim();
+  const since = run.started_at;
+  if (kind === "replied") {
+    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
+    r = (count ?? 0) > 0;
+  } else if (kind === "opened" || kind === "clicked") {
+    const { count } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
+    r = (count ?? 0) > 0;
+  } else if (kind === "failed") {
+    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
+    r = (count ?? 0) > 0;
+  } else if (kind === "tag") r = (contact.tags ?? []).includes(rest);
+  else if (kind === "optedout") r = !!contact.email_opt_out;
+  else if (kind === "stage") {
+    const { data } = await db.from("opportunities").select("stages(name)").eq("contact_id", contact.id).eq("status", "open");
+    r = (data ?? []).some((o: any) => String(o.stages?.name ?? "").toLowerCase() === rest.toLowerCase());
+  } else if (kind === "field") {
+    const [k, v] = rest.split("=");
+    r = String(contact.custom?.[k?.trim()] ?? "").toLowerCase() === (v ?? "").trim().toLowerCase();
+  } else if (kind === "booked") {
+    const { count } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
+    r = (count ?? 0) > 0;
+  } else if (kind === "booking_active" || kind === "no_show" || kind === "attended") {
+    const id = run.context?.booking_id as string | undefined;
+    if (id) {
+      const { data } = await db.from("bookings").select("status").eq("id", id).maybeSingle();
+      r = kind === "booking_active" ? data?.status === "booked" : data?.status === kind;
+    }
+  }
+  return neg ? !r : r;
+}
+
+async function advance(run: Run) {
   const db = supabaseAdmin();
   const [{ data: step }, { data: contact }, { data: ws }] = await Promise.all([
     db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("position", run.step_position).maybeSingle(),
@@ -90,6 +136,22 @@ async function advance(run: { id: string; workspace_id: string; automation_id: s
   const cfg = (step.config ?? {}) as Record<string, string | number>;
   let nextAt = new Date();
   let stop = false;
+  let jump = 1; // how many step positions to move on (skip_if etc. add more)
+
+  // Booking context (appointment reminders and follow-ups)
+  const bookingId = run.context?.booking_id as string | undefined;
+  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).maybeSingle() : { data: null };
+  const when = booking ? new Date(booking.start_time) : null;
+  const fmt = (o: Intl.DateTimeFormatOptions) => (when ? new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", ...o }).format(when) : "");
+  const extra: Record<string, string> = {
+    review_link: ws.review_link ?? "",
+    booking_link: ws.booking_link ?? "",
+    business: ws.name,
+    feedback_link: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/f/${contact.id}?t=${unsubToken(contact.id)}`,
+    booking_date: fmt({ weekday: "long", day: "numeric", month: "long" }),
+    booking_time: fmt({ hour: "2-digit", minute: "2-digit", hour12: false }),
+  };
+  const render = (t: string, c: typeof contact) => baseRender(t, c, extra);
 
   switch (step.type) {
     case "send_email":
@@ -141,6 +203,51 @@ async function advance(run: { id: string; workspace_id: string; automation_id: s
     case "wait":
       nextAt = new Date(Date.now() + Number(cfg.hours ?? 24) * 3600_000);
       break;
+    case "skip_if":
+    case "skip_unless": {
+      const ok = await evalCond(String(cfg.cond ?? ""), run, contact);
+      if (step.type === "skip_if" ? ok : !ok) jump = 1 + Number(cfg.n ?? 1);
+      break;
+    }
+    case "end":
+      stop = true;
+      await db.from("automation_runs").update({ status: "done" }).eq("id", run.id);
+      return;
+    case "wait_until": {
+      if (await evalCond(String(cfg.cond ?? ""), run, contact)) {
+        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        break; // goal reached, move on
+      }
+      const started = run.wait_started_at ? new Date(run.wait_started_at) : new Date();
+      if (Date.now() - started.getTime() >= Number(cfg.hours ?? 24) * 3600_000) {
+        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        break; // timed out, move on (a following skip_unless can branch on the goal)
+      }
+      await db.from("automation_runs").update({ wait_started_at: started.toISOString(), next_run_at: new Date(Date.now() + 5 * 60_000).toISOString() }).eq("id", run.id);
+      return;
+    }
+    case "wait_before":
+    case "wait_after": {
+      if (!booking || !when) { stop = true; break; }
+      if (booking.status === "cancelled" && step.type === "wait_before") { stop = true; break; }
+      const h = Number(cfg.hours ?? 24) * 3600_000;
+      const target = new Date(step.type === "wait_before" ? when.getTime() - h : when.getTime() + h);
+      if (target.getTime() <= Date.now()) {
+        // already past: for reminders skip the next N steps instead of sending a stale reminder
+        if (step.type === "wait_before") jump = 1 + Number(cfg.skip ?? 0);
+      } else nextAt = target;
+      break;
+    }
+    case "webhook": {
+      const url = String(cfg.url ?? "");
+      let host = "";
+      try { const u = new URL(url); if (u.protocol !== "https:") throw new Error("https only"); host = u.hostname; } catch { throw new Error(`Webhook step: invalid URL ${url}`); }
+      if (SSRF.test(host)) throw new Error("Webhook step: private addresses are blocked");
+      const payload = JSON.stringify({ event: "automation_step", automation_id: run.automation_id, contact: { id: contact.id, first_name: contact.first_name, last_name: contact.last_name, email: contact.email, phone: contact.phone, company: contact.company, tags: contact.tags, custom: contact.custom }, booking: booking ?? null });
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Kydos-Signature": createHmac("sha256", process.env.CRON_SECRET!).update(payload).digest("hex") }, body: payload, signal: AbortSignal.timeout(10000) });
+      if (!r.ok) throw new Error(`Webhook ${host} returned ${r.status}`);
+      break;
+    }
     case "stop_if_replied": {
       const { count } = await db
         .from("messages")
@@ -159,6 +266,6 @@ async function advance(run: { id: string; workspace_id: string; automation_id: s
   }
   await db
     .from("automation_runs")
-    .update({ step_position: run.step_position + 1, next_run_at: nextAt.toISOString() })
+    .update({ step_position: run.step_position + jump, next_run_at: nextAt.toISOString() })
     .eq("id", run.id);
 }

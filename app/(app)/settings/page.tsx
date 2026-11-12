@@ -20,6 +20,8 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <input name="sms_from" defaultValue={active.sms_from ?? ""} placeholder="SMS sender: +44 number, alphanumeric ID, or Messaging Service SID (MG...)" className="rounded border p-2" />
             <input name="whatsapp_from" defaultValue={active.whatsapp_from ?? ""} placeholder="WhatsApp sender, e.g. whatsapp:+447..." className="rounded border p-2" />
             <input name="notify_email" defaultValue={active.notify_email ?? ""} placeholder="Alert email for internal notifications and failures, e.g. you@kydosdigital.com" className="rounded border p-2" />
+            <input name="booking_link" defaultValue={active.booking_link ?? ""} placeholder="Booking link (Cal.com) used in follow-ups and no-show emails" className="rounded border p-2" />
+            <input name="review_link" defaultValue={active.review_link ?? ""} placeholder="Google review link used in review requests" className="rounded border p-2" />
             <input name="business_address" defaultValue={active.business_address ?? ""} placeholder="Postal address for email footers (required for compliance)" className="rounded border p-2" />
             <button className="self-start rounded bg-black px-4 py-2 text-white">Save</button>
           </form>
@@ -34,6 +36,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <li>Twilio inbound + status webhook: <code>{url}/api/webhooks/twilio</code></li>
             <li>Resend webhook: <code>{url}/api/webhooks/resend</code></li>
             <li>Cal.com webhook: <code>{url}/api/webhooks/calcom?ws={active.slug}</code> (events: booking created, cancelled; secret = CALCOM_WEBHOOK_SECRET)</li>
+            <li>Other lead sources (Zapier, Make, Google Ads): POST JSON to <code>{url}/api/inbound</code> with header <code>Authorization: Bearer INBOUND_API_KEY</code></li>
             <li>Website form endpoint: POST JSON to <code>{url}/api/forms/contact-us</code> with <code>{`{"workspace":"${active.slug}","email":"..."}`}</code></li>
           </ul>
           <h2 className="mb-1 font-semibold">Website form snippet</h2>

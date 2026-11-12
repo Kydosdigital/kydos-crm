@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const { data: ws } = await db.from("workspaces").select("id").eq("slug", slug ?? "").maybeSingle();
   if (!ws) return new Response("Unknown workspace", { status: 404 });
 
-  const ev = JSON.parse(raw) as { triggerEvent: string; payload?: { title?: string; startTime?: string; attendees?: { name?: string; email?: string }[] } };
+  const ev = JSON.parse(raw) as { triggerEvent: string; payload?: { uid?: string; rescheduleUid?: string; title?: string; startTime?: string; endTime?: string; attendees?: { name?: string; email?: string }[] } };
   const att = ev.payload?.attendees?.[0];
   if (!att?.email) return new Response("ok");
   const tag = ev.triggerEvent === "BOOKING_CANCELLED" ? "booking-cancelled" : ev.triggerEvent === "BOOKING_CREATED" || ev.triggerEvent === "BOOKING_RESCHEDULED" ? "booked" : null;
@@ -35,6 +35,19 @@ export async function POST(req: Request) {
   await db.from("contacts").update({ tags }).eq("id", c.id);
   await db.from("notes").insert({ workspace_id: ws.id, contact_id: c.id, body: `${ev.triggerEvent}: ${ev.payload?.title ?? ""} ${ev.payload?.startTime ?? ""}`.trim() });
   await fireTrigger(ws.id, c.id, { type: "tag_added", tag });
+
+  // Store the booking so reminders and follow-ups can key off its start time
+  const pl = ev.payload;
+  if (pl?.uid && pl.startTime) {
+    if (ev.triggerEvent === "BOOKING_CANCELLED") {
+      const { data: bk } = await db.from("bookings").update({ status: "cancelled" }).eq("workspace_id", ws.id).eq("uid", pl.uid).select("id").maybeSingle();
+      await fireTrigger(ws.id, c.id, { type: "booking_cancelled" }, bk ? { booking_id: bk.id } : {});
+    } else {
+      if (pl.rescheduleUid) await db.from("bookings").update({ status: "cancelled" }).eq("workspace_id", ws.id).eq("uid", pl.rescheduleUid);
+      const { data: bk } = await db.from("bookings").upsert({ workspace_id: ws.id, contact_id: c.id, uid: pl.uid, title: pl.title ?? null, start_time: pl.startTime, end_time: pl.endTime ?? null, status: "booked" }, { onConflict: "workspace_id,uid" }).select("id").single();
+      if (bk) await fireTrigger(ws.id, c.id, { type: "booking_created" }, { booking_id: bk.id });
+    }
+  }
   await notifyOwner(ws.id, `${ev.triggerEvent.replace("BOOKING_", "Booking ").toLowerCase()}: ${att.name ?? att.email}`, `${ev.payload?.title ?? ""}\n${ev.payload?.startTime ?? ""}`);
   return new Response("ok");
 }

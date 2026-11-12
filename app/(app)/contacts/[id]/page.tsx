@@ -1,20 +1,22 @@
 import { notFound } from "next/navigation";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, sendMessage, toggleTask, updateContact } from "../../../actions";
+import { addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, saveCustomValues, sendMessage, setBookingOutcome, toggleTask, updateContact } from "../../../actions";
 
 export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; t?: string }> }) {
   const { id } = await params;
   const { error, t: tplId } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
-  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }, { data: templates }] = await Promise.all([
+  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }, { data: templates }, { data: fields }, { data: bookings }] = await Promise.all([
     db.from("contacts").select("*").eq("id", id).eq("workspace_id", ws.id).maybeSingle(),
     db.from("messages").select("*").eq("contact_id", id).order("created_at"),
     db.from("notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
     db.from("tasks").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
     db.from("stages").select("id,name").eq("workspace_id", ws.id).order("position"),
     db.from("email_templates").select("*").eq("workspace_id", ws.id).order("name"),
+    db.from("custom_fields").select("*").eq("workspace_id", ws.id).order("label"),
+    db.from("bookings").select("*").eq("contact_id", id).order("start_time", { ascending: false }),
   ]);
   const tpl = (templates ?? []).find((x) => x.id === tplId);
   const { data: conn } = await (await import("@/lib/supabase/admin")).supabaseAdmin().from("mail_connections").select("account_email").eq("workspace_id", ws.id).maybeSingle();
@@ -84,6 +86,42 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
       </section>
 
       <aside className="flex flex-col gap-6">
+        {(bookings ?? []).length > 0 && (
+          <div>
+            <h2 className="mb-2 font-semibold">Bookings</h2>
+            {(bookings ?? []).map((b) => (
+              <form key={b.id} action={setBookingOutcome} className="mb-2 rounded border p-2 text-sm">
+                <input type="hidden" name="booking_id" value={b.id} /><input type="hidden" name="contact_id" value={c.id} />
+                <div>{new Date(b.start_time).toLocaleString("en-GB", { timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short" })}: <b>{b.status.replace("_", " ")}</b></div>
+                <div className="text-xs text-gray-500">{b.title}</div>
+                {b.status !== "cancelled" && (
+                  <div className="mt-1 flex gap-1">
+                    <button name="status" value="attended" className="rounded border px-2 py-0.5 text-xs">Attended</button>
+                    <button name="status" value="no_show" className="rounded border px-2 py-0.5 text-xs">No-show</button>
+                  </div>
+                )}
+              </form>
+            ))}
+          </div>
+        )}
+        {(fields ?? []).length > 0 && (
+          <div>
+            <h2 className="mb-2 font-semibold">Custom fields</h2>
+            <form action={saveCustomValues} className="flex flex-col gap-1">
+              <input type="hidden" name="contact_id" value={c.id} />
+              {(fields ?? []).map((f) => (
+                <label key={f.id} className="text-xs text-gray-600">{f.label}
+                  {f.type === "select" ? (
+                    <select name={`cf_${f.key}`} defaultValue={String((c.custom ?? {})[f.key] ?? "")} className="mt-0.5 block w-full rounded border p-1 text-sm"><option value="" />{f.options.map((o: string) => <option key={o}>{o}</option>)}</select>
+                  ) : (
+                    <input name={`cf_${f.key}`} type={f.type === "number" ? "number" : f.type === "date" ? "date" : "text"} defaultValue={String((c.custom ?? {})[f.key] ?? "")} className="mt-0.5 block w-full rounded border p-1 text-sm" />
+                  )}
+                </label>
+              ))}
+              <button className="rounded border px-2 py-1 text-sm">Save fields</button>
+            </form>
+          </div>
+        )}
         <div>
           <h2 className="mb-2 font-semibold">Tags</h2>
           <div className="mb-2 flex flex-wrap gap-1">{c.tags.map((t: string) => <span key={t} className="rounded bg-gray-200 px-2 py-0.5 text-xs">{t}</span>)}</div>
