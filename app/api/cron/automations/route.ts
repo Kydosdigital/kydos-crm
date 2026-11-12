@@ -1,4 +1,5 @@
 import { processDueRuns } from "@/lib/automation";
+import { syncAllInboxes } from "@/lib/outlook";
 
 
 export async function GET(req: Request) {
@@ -6,5 +7,6 @@ export async function GET(req: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
   const processed = await processDueRuns();
-  return Response.json({ processed });
+  const synced = await syncAllInboxes();
+  return Response.json({ processed, synced });
 }
