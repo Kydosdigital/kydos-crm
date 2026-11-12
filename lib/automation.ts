@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase/admin";
 import { render, sendEmail, sendSms } from "./messaging";
 import { notifyOwner } from "./notify";
+import { sendWhatsAppTemplate } from "./whatsapp";
 
 /** Next weekday (Mon to Fri) at the given hour, London time. */
 function nextWeekdayAt(hour: number) {
@@ -111,6 +112,9 @@ async function advance(run: { id: string; workspace_id: string; automation_id: s
     }
     case "create_task":
       await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+      break;
+    case "send_whatsapp":
+      await sendWhatsAppTemplate(ws, contact, String(cfg.template), ((cfg.vars as unknown as string[]) ?? []).map((v) => render(String(v), contact)), String(cfg.lang ?? "en_GB"));
       break;
     case "notify":
       await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
