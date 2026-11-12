@@ -35,7 +35,7 @@ export default async function Integrations({ searchParams }: { searchParams: Pro
     <Page>
       <PageHeader
         title="Integrations and interactions"
-        description="Every connected service with a live health check, and every interaction across all channels in one feed. Checks ran at {new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" })}."
+        description={`Every connected service with a live health check, and every interaction across all channels in one feed. Checks ran at ${new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" })}.`}
         actions={<Link href={`/integrations?r=${Date.now()}${channel ? `&channel=${channel}` : ""}`} className="btn btn-secondary"><RefreshCw aria-hidden />Re-run checks</Link>}
         meta={<><Badge tone={live ? "success" : "neutral"} dot>{live} connected</Badge>{broken > 0 && <Badge tone="danger" dot>{broken} with a problem</Badge>}</>}
       />
