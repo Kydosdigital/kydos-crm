@@ -735,6 +735,34 @@ export async function cancelRetainer(fd: FormData) {
   revalidatePath("/retainers");
 }
 
+// ───────── Proposals ─────────
+export async function createProposal(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const { error } = await (await supabaseServer()).from("proposals").insert({ workspace_id: ws.id, contact_id: String(fd.get("contact_id")), title: s(fd, "title") ?? "Proposal", body: s(fd, "body") ?? "", amount_gbp: fd.get("amount") ? Number(fd.get("amount")) : null });
+  redirect("/proposals" + (error ? `?error=${encodeURIComponent(error.message)}` : ""));
+}
+export async function sendProposal(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const { data: p } = await db.from("proposals").select("*").eq("id", String(fd.get("id"))).eq("workspace_id", ws.id).single();
+  if (!p) return;
+  const { data: c } = await db.from("contacts").select("*").eq("id", p.contact_id).single();
+  if (!c) return;
+  const url = `${process.env.NEXT_PUBLIC_APP_URL}/f/proposal/${p.token}`;
+  const body = `Hi ${c.first_name || "there"},\n\nThank you for your time. I have put your proposal together: ${p.title}${p.amount_gbp != null ? ` (£${Number(p.amount_gbp).toLocaleString("en-GB")})` : ""}.\n\n[button: View and accept your proposal | ${url}]\n\nIf you have any questions, just reply to this email.\n\nBest wishes,\n${ws.name}`;
+  const r = await sendEmail(ws, c, `Your proposal from ${ws.name}: ${p.title}`, body);
+  if (r.ok) {
+    if (p.status === "draft") await db.from("proposals").update({ status: "sent" }).eq("id", p.id);
+    await logActivity(ws.id, "user", "sent proposal", "proposal", p.id, p.title);
+  }
+  revalidatePath("/proposals");
+}
+export async function deleteProposal(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("proposals").delete().eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
+  revalidatePath("/proposals");
+}
+
 // ───────── Content calendar ─────────
 export async function savePost(fd: FormData) {
   const { ws } = await requireWorkspace();
