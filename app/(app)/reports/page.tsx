@@ -14,15 +14,18 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const days = Math.min(365, Math.max(7, Number((await searchParams).days) || 30));
   const db = await supabaseServer();
   const since = ago(days);
-  const [{ data: contacts }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }, { data: allContacts }, { data: paidInv }] = await Promise.all([
-    db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", since).limit(10000),
+  const [{ data: contactsBoth }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }, { data: allContacts }, { data: paidInv }] = await Promise.all([
+    db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", ago(days * 2)).limit(20000),
     db.from("opportunities").select("id,value,status,stage_id,created_at,closed_at,contact_id,lost_reason").eq("workspace_id", ws.id).limit(10000),
     db.from("stages").select("id,name,position").eq("workspace_id", ws.id).order("position"),
     db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("created_at", ago(90)).limit(10000),
-    db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", since).order("created_at").limit(20000),
+    db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", ago(days * 2)).order("created_at").limit(40000),
     db.from("contacts").select("id,source,utm_source,utm_medium,fbclid,gclid").eq("workspace_id", ws.id).limit(20000),
     db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).limit(10000),
   ]);
+
+  const contacts = (contactsBoth ?? []).filter((c) => c.created_at >= since);
+  const prevContacts = (contactsBoth ?? []).filter((c) => c.created_at < since);
 
   // Lead sources
   const bookedIds = new Set((bookings ?? []).filter((b) => b.status !== "cancelled").map((b) => b.contact_id));
@@ -60,6 +63,21 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   for (const m of firstOut ?? []) if (!first.has(m.contact_id)) first.set(m.contact_id, m.created_at);
   const waits = (contacts ?? []).filter((c) => first.has(c.id)).map((c) => Math.max(0, (Date.parse(first.get(c.id)!) - Date.parse(c.created_at)) / 60000));
   const never = (contacts ?? []).length - waits.length;
+  const prevWaits = prevContacts.filter((c) => first.has(c.id)).map((c) => Math.max(0, (Date.parse(first.get(c.id)!) - Date.parse(c.created_at)) / 60000));
+  const prevNever = prevContacts.length - prevWaits.length;
+  const delta = (cur: number | null, prev: number | null, lowerBetter = false) => {
+    if (cur === null || prev === null || (prev === 0 && cur === 0)) return undefined;
+    if (prev === 0) return <span className="text-muted">New this period</span>;
+    const pct = Math.round(((cur - prev) / prev) * 100);
+    if (pct === 0) return <span className="text-muted">No change vs previous {days} days</span>;
+    const good = lowerBetter ? pct < 0 : pct > 0;
+    return <span className={good ? "text-success-ink" : "text-danger-ink"}>{pct > 0 ? "▲" : "▼"} {Math.abs(pct)}% <span className="text-muted">vs previous {days} days</span></span>;
+  };
+  const perDay = new Map<string, number>();
+  for (const c of contacts) { const k = c.created_at.slice(0, 10); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
+  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
+  const maxDay = Math.max(1, ...series);
+  const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * 600},${70 - (v / maxDay) * 60}`).join(" ");
 
   // Pipeline
   const open = (opps ?? []).filter((o) => o.status === "open");
@@ -79,7 +97,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const maxWk = Math.max(1, ...wk.map(([, v]) => v));
   const att = (bookings ?? []).filter((b) => b.status === "attended").length, ns = (bookings ?? []).filter((b) => b.status === "no_show").length;
 
-  const kpis = [["New leads", String((contacts ?? []).length), UserPlus], ["Median time to first message", mins(median(waits)), Clock], ["Never contacted", String(never), UserX], ["Win rate", winRate === null ? "n/a" : `${winRate}%`, Trophy]] as const;
+  const kpis = [["New leads", String((contacts ?? []).length), UserPlus, delta(contacts.length, prevContacts.length)], ["Median time to first message", mins(median(waits)), Clock, delta(median(waits), median(prevWaits), true)], ["Never contacted", String(never), UserX, delta(never, prevNever, true)], ["Win rate", winRate === null ? "n/a" : `${winRate}%`, Trophy, undefined]] as const;
 
   return (
     <Page>
@@ -90,8 +108,17 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        {kpis.map(([l, v, icon]) => <Stat key={l} label={l} value={v} icon={icon} tone={l === "Never contacted" && never > 0 ? "warning" : "brand"} />)}
+        {kpis.map(([l, v, icon, hint]) => <Stat key={l} label={l} value={v} icon={icon} hint={hint} tone={l === "Never contacted" && never > 0 ? "warning" : "brand"} />)}
       </div>
+
+      <Card className="mb-6">
+        <CardTitle aside={<span className="tabular text-xs text-muted">Peak {maxDay} a day</span>}>New leads per day</CardTitle>
+        <svg viewBox="0 0 600 76" preserveAspectRatio="none" className="h-24 w-full" role="img" aria-label={`New leads per day over the last ${days} days`}>
+          <polyline points={`0,72 ${pts} 600,72`} fill="var(--brand-soft)" stroke="none" opacity="0.7" />
+          <polyline points={pts} fill="none" stroke="var(--brand)" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        </svg>
+        <div className="mt-1 flex justify-between text-[11px] text-muted"><span>{days} days ago</span><span>Today</span></div>
+      </Card>
 
       <TableCard className="mb-6">
         <div className="px-5 pb-1 pt-4"><CardTitle>Lead sources</CardTitle></div>
