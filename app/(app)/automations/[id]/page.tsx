@@ -13,7 +13,7 @@ export default async function EditAutomation({ params, searchParams }: { params:
   const { data: a } = await db.from("automations").select("*").eq("id", id).eq("workspace_id", ws.id).maybeSingle();
   if (!a) notFound();
   const { data: steps } = await db.from("automation_steps").select("type,config").eq("automation_id", id).order("position");
-  const T = ["contact_created:New contact", "tag_added:Tag added", "form_submitted:Form submitted", "stage_changed:Stage changed (any)", "booking_created:Booking made (Cal.com)", "booking_cancelled:Booking cancelled", "missed_call:Missed call (Twilio)", "date_reached:Date reached (custom date field)"];
+  const T = ["contact_created:New contact", "tag_added:Tag added", "form_submitted:Form submitted", "stage_changed:Stage changed (any)", "booking_created:Booking made (Cal.com)", "booking_cancelled:Booking cancelled", "missed_call:Missed call (Twilio)", "date_reached:Date reached (custom date field)", "reply_received:Reply received (any channel)", "email_opened:Email opened", "email_clicked:Email link clicked", "invoice_paid:Invoice or retainer paid", "deal_won:Deal won", "deal_lost:Deal lost", "proposal_accepted:Proposal accepted"];
   return (
     <div className="max-w-3xl">
       <Link href="/automations" className="text-sm text-gray-500 underline">Back to automations</Link>

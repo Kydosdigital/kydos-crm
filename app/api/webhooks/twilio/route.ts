@@ -1,3 +1,4 @@
+import { fireTrigger } from "@/lib/automation";
 import twilio from "twilio";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { toE164 } from "@/lib/messaging";
@@ -51,5 +52,6 @@ export async function POST(req: Request) {
     status: "received",
     provider_id: params.MessageSid,
   });
+  await fireTrigger(ws.id, contact.id, { type: "reply_received" }, { channel: isWa ? "whatsapp" : "sms" });
   return new Response("<Response/>", { headers: { "Content-Type": "text/xml" } });
 }

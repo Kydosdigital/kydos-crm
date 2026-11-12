@@ -1,3 +1,4 @@
+import { fireTrigger } from "@/lib/automation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
@@ -13,6 +14,7 @@ export async function GET(req: Request) {
         const ua = req.headers.get("user-agent") ?? "";
         const machine = Date.now() - new Date(msg.created_at).getTime() < 8000 || ua === "";
         await db.from("message_events").insert({ workspace_id: msg.workspace_id, message_id: m, contact_id: msg.contact_id, type: "opened", machine });
+        if (!machine) await fireTrigger(msg.workspace_id, msg.contact_id, { type: "email_opened" });
       }
     } catch {}
   }

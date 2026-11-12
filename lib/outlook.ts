@@ -1,3 +1,4 @@
+import { fireTrigger } from "./automation";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { linkify, trackHtml } from "./tracking";
 import { supabaseAdmin } from "./supabase/admin";
@@ -142,7 +143,7 @@ export async function syncInbox(workspaceId: string) {
       workspace_id: workspaceId, contact_id: contact.id, channel: "email", direction: "in",
       subject: m.subject, body: m.bodyPreview, status: "received", provider_id: m.id, created_at: m.receivedDateTime,
     });
-    if (!error) stored++;
+    if (!error) { stored++; await fireTrigger(workspaceId, contact.id, { type: "reply_received" }, { channel: "email" }); }
   }
   await db.from("mail_connections").update({ last_synced_at: started }).eq("workspace_id", workspaceId);
   return stored;

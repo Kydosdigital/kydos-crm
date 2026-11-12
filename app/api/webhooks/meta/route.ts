@@ -97,6 +97,7 @@ export async function POST(req: Request) {
           const text = m.text?.body ?? `[${m.type}]`;
           if (c) {
             await db.from("messages").insert({ workspace_id: ws.id, contact_id: c.id, channel: "whatsapp", direction: "in", body: text, status: "received", provider_id: m.id });
+            await fireTrigger(ws.id, c.id, { type: "reply_received" }, { channel: "whatsapp" });
             if (/^\s*stop\s*$/i.test(text)) await db.from("contacts").update({ sms_opt_out: true }).eq("id", c.id);
           }
         }

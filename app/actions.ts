@@ -201,6 +201,7 @@ export async function moveOpportunity(fd: FormData) {
   const { data: opp } = await db.from("opportunities").update({ stage_id: stageId, status, closed_at: status === "open" ? null : new Date().toISOString() }).eq("id", oppId).select("contact_id,value").single();
   if (opp) {
     await fireTrigger(ws.id, opp.contact_id, { type: "stage_changed", stage_id: stageId });
+    if (status === "won" || status === "lost") await fireTrigger(ws.id, opp.contact_id, { type: status === "won" ? "deal_won" : "deal_lost" });
     if (status === "won") await sendMetaEvent(ws.id, opp.contact_id, "Purchase", Number(opp.value) || undefined);
     await logActivity(ws.id, "user", `moved deal to ${stage?.name}`, "opportunity", oppId);
   }

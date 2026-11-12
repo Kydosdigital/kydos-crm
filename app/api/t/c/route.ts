@@ -1,3 +1,4 @@
+import { fireTrigger } from "@/lib/automation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifyClick } from "@/lib/tracking";
 
@@ -12,6 +13,7 @@ export async function GET(req: Request) {
     if (msg) {
       const machine = Date.now() - new Date(msg.created_at).getTime() < 8000; // link scanners hit within seconds
       await db.from("message_events").insert({ workspace_id: msg.workspace_id, message_id: m, contact_id: msg.contact_id, type: "clicked", url: u, machine });
+      if (!machine) await fireTrigger(msg.workspace_id, msg.contact_id, { type: "email_clicked" }, { url: u });
     }
   } catch {}
   return Response.redirect(u, 302);

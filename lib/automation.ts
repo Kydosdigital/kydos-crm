@@ -27,7 +27,14 @@ export type TriggerEvent =
   | { type: "booking_created" }
   | { type: "booking_cancelled" }
   | { type: "date_reached" }
-  | { type: "missed_call" };
+  | { type: "missed_call" }
+  | { type: "reply_received" }
+  | { type: "email_opened" }
+  | { type: "email_clicked" }
+  | { type: "invoice_paid" }
+  | { type: "deal_won" }
+  | { type: "deal_lost" }
+  | { type: "proposal_accepted" };
 
 /** Call whenever something happens. Enrols the contact in every matching active automation. */
 export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent, context: Record<string, unknown> = {}) {
@@ -52,6 +59,11 @@ export async function fireTrigger(workspaceId: string, contactId: string, ev: Tr
       .eq("status", "active")
       .maybeSingle();
     if (existing && !context.booking_id) continue;
+    // Noisy triggers: enrol a contact at most once a day per automation
+    if (["email_opened", "email_clicked", "reply_received"].includes(ev.type)) {
+      const { data: recent } = await db.from("automation_runs").select("id").eq("automation_id", a.id).eq("contact_id", contactId).gte("started_at", new Date(Date.now() - 864e5).toISOString()).limit(1);
+      if (recent?.length) continue;
+    }
     await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
   }
 }
@@ -238,6 +250,31 @@ async function advance(run: Run) {
         // already past: for reminders skip the next N steps instead of sending a stale reminder
         if (step.type === "wait_before") jump = 1 + Number(cfg.skip ?? 0);
       } else nextAt = target;
+      break;
+    }
+    case "assign_owner": {
+      const { data: mem } = await db.from("workspace_members").select("user_id").eq("workspace_id", ws.id);
+      let owner: string | undefined;
+      if (String(cfg.who).toLowerCase() === "round_robin") {
+        // Least-loaded teammate gets the next contact, which rotates fairly over time.
+        const counts = await Promise.all((mem ?? []).map(async (m) => ({ id: m.user_id as string, n: (await db.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("owner_id", m.user_id)).count ?? 0 })));
+        owner = counts.sort((a, b) => a.n - b.n)[0]?.id;
+      } else {
+        const { data: users } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const u = users?.users.find((x) => x.email?.toLowerCase() === String(cfg.who).toLowerCase());
+        if (u && (mem ?? []).some((m) => m.user_id === u.id)) owner = u.id;
+      }
+      if (owner) await db.from("contacts").update({ owner_id: owner }).eq("id", contact.id);
+      break;
+    }
+    case "set_field": {
+      const custom = { ...(contact.custom ?? {}), [String(cfg.key)]: render(String(cfg.value ?? ""), contact) };
+      await db.from("contacts").update({ custom }).eq("id", contact.id);
+      break;
+    }
+    case "split": {
+      // Split test: pct percent of contacts skip the next n steps, so two versions of a message can run side by side.
+      if (Math.random() * 100 < Number(cfg.pct ?? 50)) jump = 1 + Number(cfg.n ?? 1);
       break;
     }
     case "webhook": {

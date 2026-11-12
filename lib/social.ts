@@ -1,3 +1,4 @@
+import { fireTrigger } from "./automation";
 import { supabaseAdmin } from "./supabase/admin";
 
 const GRAPH = "https://graph.facebook.com/v23.0";
@@ -22,6 +23,7 @@ export async function receiveSocialDM(wsId: string, channel: SocialChannel, send
   }
   if (!id) return;
   await db.from("messages").insert({ workspace_id: wsId, contact_id: id, channel, direction: "in", body: text, status: "received", provider_id: mid });
+  await fireTrigger(wsId, id, { type: "reply_received" }, { channel });
 }
 
 /**

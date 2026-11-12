@@ -26,6 +26,9 @@ export function parseSteps(text: string): StepRow[] {
     else if (t === "wait_before") { const [hours, skip] = arg.split("|").map((x) => x.trim()); config = { hours: Number(hours) || 24, skip: Number(skip) || 0 }; }
     else if (t === "wait_after") config = { hours: Number(arg) || 1 };
     else if (t === "webhook") config = { url: arg };
+    else if (t === "assign_owner") config = { who: arg };
+    else if (t === "set_field") { const [k, ...v] = arg.split("="); config = { key: k.trim(), value: v.join("=").trim() }; }
+    else if (t === "split") { const [pct, n] = arg.split("|").map((x) => x.trim()); config = { pct: Number(pct) || 50, n: Number(n) || 1 }; }
     else if (t === "send_whatsapp") { const [template, ...vars] = arg.split("|").map((x) => x.trim()); config = { template, vars: vars.map(dec) }; }
     else if (arg.startsWith("{")) { try { config = JSON.parse(arg); } catch { /* keep empty */ } }
     return { type: t, config };
@@ -50,6 +53,9 @@ export function stepsToText(steps: StepRow[]): string {
       case "wait_before": return `wait_before: ${g("hours")} | ${g("skip")}`;
       case "wait_after": return `wait_after: ${g("hours")}`;
       case "webhook": return `webhook: ${g("url")}`;
+      case "assign_owner": return `assign_owner: ${g("who")}`;
+      case "set_field": return `set_field: ${g("key")} = ${g("value")}`;
+      case "split": return `split: ${g("pct")} | ${g("n")}`;
       case "send_whatsapp": return `send_whatsapp: ${[g("template"), ...((c.vars as string[]) ?? []).map((v) => enc(String(v)))].join(" | ")}`;
       case "stop_if_replied": case "end": return t;
       default: return Object.keys(c).length ? `${t}: ${JSON.stringify(c)}` : t;

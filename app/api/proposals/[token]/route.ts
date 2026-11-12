@@ -22,6 +22,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (c && !(c.tags ?? []).includes(tag)) await db.from("contacts").update({ tags: [...(c.tags ?? []), tag] }).eq("id", p.contact_id);
     await db.from("notes").insert({ workspace_id: p.workspace_id, contact_id: p.contact_id, body: accept ? `Proposal "${p.title}" accepted by ${name}` : `Proposal "${p.title}" declined${p.decline_reason ? `: ${p.decline_reason}` : ""}` });
     await fireTrigger(p.workspace_id, p.contact_id, { type: "tag_added", tag });
+    if (accept) await fireTrigger(p.workspace_id, p.contact_id, { type: "proposal_accepted" });
     await notifyOwner(p.workspace_id, accept ? "Proposal ACCEPTED" : "Proposal declined", `${p.title}${accept ? ` accepted by ${name}` : ""}`);
     await logActivity(p.workspace_id, "client", accept ? "proposal accepted" : "proposal declined", "proposal", p.id);
   }
