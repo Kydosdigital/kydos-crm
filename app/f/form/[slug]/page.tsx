@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { notFound } from "next/navigation";
 import FormClient from "./client";
+import { ClientShell } from "@/components/shell/public-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,11 @@ export default async function HostedForm({ params, searchParams }: { params: Pro
   const { data: f } = await db.from("hosted_forms").select("*").eq("workspace_id", ws.id).eq("slug", slug).eq("active", true).maybeSingle();
   if (!f) notFound();
   await db.from("hosted_forms").update({ views: (f.views ?? 0) + 1 }).eq("id", f.id);
+  const form = <FormClient slug={slug} workspace={ws.slug} form={{ headline: f.headline, intro: f.intro, button: f.button_text, success: f.success_message, consent: f.consent_text, fields: f.fields }} embed={!!embed} />;
+  if (embed) return <div data-theme="light" className="min-h-screen bg-surface p-6 text-ink">{form}</div>;
   return (
-    <div className={embed ? "p-6" : "mx-auto my-10 max-w-md rounded-lg border bg-white p-6 shadow-sm"}>
-      <FormClient slug={slug} workspace={ws.slug} form={{ headline: f.headline, intro: f.intro, button: f.button_text, success: f.success_message, consent: f.consent_text, fields: f.fields }} embed={!!embed} />
-    </div>
+    <ClientShell width="sm" footer={ws.name}>
+      <div className="card p-7 shadow-md sm:p-9">{form}</div>
+    </ClientShell>
   );
 }
