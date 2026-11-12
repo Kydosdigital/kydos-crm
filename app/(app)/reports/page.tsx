@@ -16,7 +16,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const since = ago(days);
   const [{ data: contacts }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }, { data: allContacts }, { data: paidInv }] = await Promise.all([
     db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", since).limit(10000),
-    db.from("opportunities").select("id,value,status,stage_id,created_at,closed_at,contact_id").eq("workspace_id", ws.id).limit(10000),
+    db.from("opportunities").select("id,value,status,stage_id,created_at,closed_at,contact_id,lost_reason").eq("workspace_id", ws.id).limit(10000),
     db.from("stages").select("id,name,position").eq("workspace_id", ws.id).order("position"),
     db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("created_at", ago(90)).limit(10000),
     db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", since).order("created_at").limit(20000),
@@ -49,6 +49,11 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   for (const i of paidInv ?? []) bump(i.contact_id).paid += Number(i.amount_gbp);
   const revenue = [...rev.entries()].map(([k, v]) => ({ k, ...v, total: v.won + v.paid })).filter((r) => r.total > 0).sort((a, b) => b.total - a.total);
   const maxRev = Math.max(1, ...revenue.map((r) => r.total));
+
+  const reasons = new Map<string, number>();
+  for (const o of opps ?? []) if (o.status === "lost" && (o.closed_at ?? o.created_at) >= since) { const k = (o.lost_reason ?? "").trim() || "No reason recorded"; reasons.set(k, (reasons.get(k) ?? 0) + 1); }
+  const lostRows = [...reasons.entries()].sort((a, b) => b[1] - a[1]);
+  const maxLost = Math.max(1, ...lostRows.map(([, n]) => n));
 
   // Speed to first reply
   const first = new Map<string, string>();
@@ -117,6 +122,13 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <table className="w-full text-left text-[13px]"><tbody>
             {months.map(([m, v]) => <tr key={m} className="border-b border-line last:border-0"><td className="tabular py-2 pr-3 text-ink-2">{m}</td><td className="w-1/2"><Bar v={v} max={maxMonth} /></td><td className="tabular pl-3 text-right font-medium text-ink">{gbp(v)}</td></tr>)}
             {!months.length && <tr><td className="py-4 text-muted">No won deals yet. Move an opportunity to Won to see revenue.</td></tr>}
+          </tbody></table>
+        </Card>
+        <Card>
+          <CardTitle icon={UserX}>Why deals were lost</CardTitle>
+          <table className="w-full text-left text-[13px]"><tbody>
+            {lostRows.map(([r, n]) => <tr key={r} className="border-b border-line last:border-0"><td className="py-2 pr-3 text-ink-2">{r}</td><td className="w-1/2"><Bar v={n} max={maxLost} /></td><td className="tabular pl-3 text-right font-medium text-ink">{n}</td></tr>)}
+            {!lostRows.length && <tr><td className="py-4 text-muted">No lost deals in this period. Add a reason on lost cards in the Pipeline.</td></tr>}
           </tbody></table>
         </Card>
         <Card>

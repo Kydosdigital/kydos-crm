@@ -822,3 +822,58 @@ export async function deleteShare(fd: FormData) {
   await (await supabaseServer()).from("calendar_shares").delete().eq("token", String(fd.get("token")));
   revalidatePath("/calendar");
 }
+
+
+// ───────── Bulk contact actions ─────────
+const ids = (fd: FormData) => fd.getAll("ids").map(String).filter(Boolean).slice(0, 500);
+
+export async function bulkTag(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const tag = s(fd, "tag");
+  const list = ids(fd);
+  if (!tag || !list.length) redirect("/contacts?error=" + encodeURIComponent("Select contacts and type a tag first"));
+  const { data: rows } = await db.from("contacts").select("id,tags").eq("workspace_id", ws.id).in("id", list);
+  let n = 0;
+  for (const c of rows ?? []) {
+    if ((c.tags ?? []).includes(tag!)) continue;
+    await db.from("contacts").update({ tags: [...(c.tags ?? []), tag] }).eq("id", c.id);
+    await fireTrigger(ws.id, c.id, { type: "tag_added", tag: tag! });
+    n++;
+  }
+  await logActivity(ws.id, "user", `bulk tagged ${n} contacts "${tag}"`, "contact", list[0]);
+  redirect(`/contacts?done=${encodeURIComponent(`Tagged ${n} contact${n === 1 ? "" : "s"} "${tag}"`)}`);
+}
+
+export async function bulkEnrol(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const list = ids(fd);
+  const autoId = String(fd.get("automation_id") ?? "");
+  if (!autoId || !list.length) redirect("/contacts?error=" + encodeURIComponent("Select contacts and an automation first"));
+  const admin = supabaseAdmin();
+  const { data: a } = await admin.from("automations").select("id").eq("id", autoId).eq("workspace_id", ws.id).maybeSingle();
+  if (!a) redirect("/contacts?error=" + encodeURIComponent("Automation not found"));
+  let n = 0;
+  for (const cid of list) {
+    const { data: active } = await admin.from("automation_runs").select("id").eq("automation_id", autoId).eq("contact_id", cid).eq("status", "active").maybeSingle();
+    if (!active) { await admin.from("automation_runs").insert({ workspace_id: ws.id, automation_id: autoId, contact_id: cid }); n++; }
+  }
+  redirect(`/contacts?done=${encodeURIComponent(`Enrolled ${n} contact${n === 1 ? "" : "s"}`)}`);
+}
+
+export async function bulkDelete(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const list = ids(fd);
+  if (!list.length) redirect("/contacts?error=" + encodeURIComponent("Select contacts first"));
+  await db.from("contacts").delete().eq("workspace_id", ws.id).in("id", list);
+  await logActivity(ws.id, "user", `bulk deleted ${list.length} contacts`, "contact");
+  redirect(`/contacts?done=${encodeURIComponent(`Deleted ${list.length} contact${list.length === 1 ? "" : "s"}`)}`);
+}
+
+export async function setLostReason(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  await db.from("opportunities").update({ lost_reason: s(fd, "lost_reason") ?? null }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
+  revalidatePath("/pipeline");
+}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { moveOpportunity, createOpportunity } from "../../actions";
+import { moveOpportunity, createOpportunity, setLostReason } from "../../actions";
 import { StageSelect } from "@/components/shell/stage-select";
 import { Modal } from "@/components/ui/modal";
 import { KanbanSquare, Plus } from "lucide-react";
@@ -45,6 +45,7 @@ export default async function Pipeline() {
         </div>}
       />
       {(stages ?? []).length === 0 && <div className="card"><EmptyState icon={KanbanSquare} title="No pipeline stages yet">Stages appear here once they are set up for this business.</EmptyState></div>}
+      <datalist id="lost-reasons">{["Price too high", "Went with a competitor", "No budget", "No response", "Not a good fit", "Timing"].map((r) => <option key={r} value={r} />)}</datalist>
       <PipelineDnd>
         {(stages ?? []).map((st, si) => {
           const items = (opps ?? []).filter((o) => o.stage_id === st.id);
@@ -65,6 +66,13 @@ export default async function Pipeline() {
                         <span className="tabular shrink-0 text-[13px] font-semibold text-ink">{gbp.format(Number(o.value))}</span>
                       </div>
                       <div className="mt-2 flex items-center gap-2 text-xs text-muted"><Avatar name={personName(c)} size="sm" /><span className="truncate">{[c?.first_name, c?.last_name].filter(Boolean).join(" ") || c?.email}</span></div>
+                      {o.status === "lost" && (
+                        <form action={setLostReason} className="mt-2.5 flex gap-1.5">
+                          <input type="hidden" name="id" value={o.id} />
+                          <input name="lost_reason" list="lost-reasons" defaultValue={o.lost_reason ?? ""} placeholder="Why was it lost?" aria-label="Lost reason" className="input input-sm flex-1" />
+                          <button className="btn btn-secondary btn-sm">Save</button>
+                        </form>
+                      )}
                       <form action={moveOpportunity} className="mt-2.5 flex gap-1.5 border-t border-line pt-2.5">
                         <input type="hidden" name="id" value={o.id} />
                         <StageSelect stages={(stages ?? []).map((x) => ({ id: x.id, name: x.name }))} value={st.id} />
