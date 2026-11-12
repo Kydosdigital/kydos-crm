@@ -33,21 +33,21 @@ For a detailed list of open work, consult the shared checklist rather than an ol
 
 ### Install and check
 
-\`\`\`bash
+```bash
 npm ci
 npx next typegen
 npx tsc --noEmit
 npm run build
 npm run dev
-\`\`\`
+```
 
-Open the local Next.js URL shown by the dev server. The GitHub CI workflow runs \`npm ci\`, \`npx next typegen\` and \`npx tsc --noEmit\`; Vercel handles deployment builds. A passing type-check is not an integration or user-acceptance test.
+Open the local Next.js URL shown by the dev server. The GitHub CI workflow runs `npm ci`, `npx next typegen` and `npx tsc --noEmit`; Vercel handles deployment builds. A passing type-check is not an integration or user-acceptance test.
 
 ### Environment variables
 
-Create a local \`.env.local\` yourself. There is currently no committed \`.env.example\` in this repository. Use **placeholders** here and put real secrets only in your local environment, deployment secrets or a secrets manager.
+Create a local `.env.local` yourself. There is currently no committed `.env.example` in this repository. Use **placeholders** here and put real secrets only in your local environment, deployment secrets or a secrets manager.
 
-\`\`\`dotenv
+```dotenv
 # Core
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
@@ -87,17 +87,17 @@ INBOUND_WORKSPACE_SLUG=YOUR_WORKSPACE_SLUG
 MCP_API_KEY=YOUR_MCP_API_KEY
 MCP_WORKSPACE_SLUG=YOUR_WORKSPACE_SLUG
 ANTHROPIC_API_KEY=YOUR_ANTHROPIC_API_KEY
-\`\`\`
+```
 
 These are configuration names, **not** permission to enable every optional service. Only configure and test a channel that the business intends to use. The Supabase service-role key, API keys and webhook secrets must never be exposed to browser code.
 
 ### Database setup
 
-The database evolved through \`supabase/migrations/0001_init.sql\` to \`0026_client_role.sql\`; **0001 alone is no longer sufficient**. For a brand-new, non-production project, review and apply the migrations in order with a migration-aware process, recording which versions were applied.
+The database evolved through `supabase/migrations/0001_init.sql` to `0026_client_role.sql`; **0001 alone is no longer sufficient**. For a brand-new, non-production project, review and apply the migrations in order with a migration-aware process, recording which versions were applied.
 
-**Do not blindly rerun SQL migrations in the live database.** In particular, \`0003_schedule_automation_runner.sql\` contains a deployment-specific cron URL. Check the target environment, Vault secret and schedule before applying it to a fresh project. Only the designated maintainer applies migrations to the live Supabase project.
+**Do not blindly rerun SQL migrations in the live database.** In particular, `0003_schedule_automation_runner.sql` contains a deployment-specific cron URL. Check the target environment, Vault secret and schedule before applying it to a fresh project. Only the designated maintainer applies migrations to the live Supabase project.
 
-Before testing the application, configure Supabase Auth, create an owner account, verify the required RLS policies, and confirm the private \`backups\` bucket exists if you are testing backup behaviour.
+Before testing the application, configure Supabase Auth, create an owner account, verify the required RLS policies, and confirm the private `backups` bucket exists if you are testing backup behaviour.
 
 ### First workspace and invitations
 
@@ -112,18 +112,18 @@ The client role is intended to expose Contacts, Pipeline, Reports, Calendar and 
 
 ## Running scheduled jobs
 
-The authenticated endpoint is \`GET /api/cron/automations\` with the header:
+The authenticated endpoint is `GET /api/cron/automations` with the header:
 
-\`\`\`http
+```http
 Authorization: Bearer YOUR_CRON_SECRET
-\`\`\`
+```
 
-It runs automation steps, scheduled sends, date triggers, backups, inbox synchronisation, summaries and optional AI work. The endpoint rejects requests when \`CRON_SECRET\` is absent or incorrect.
+It runs automation steps, scheduled sends, date triggers, backups, inbox synchronisation, summaries and optional AI work. The endpoint rejects requests when `CRON_SECRET` is absent or incorrect.
 
 **Do not confuse the two schedules in this repository:**
 
-- \`vercel.json\` contains a daily \`0 7 * * *\` invocation.
-- \`supabase/migrations/0003_schedule_automation_runner.sql\` configures a **five-minute** Supabase \`pg_cron\` job using \`pg_net\` and a Vault secret.
+- `vercel.json` contains a daily `0 7 * * *` invocation.
+- `supabase/migrations/0003_schedule_automation_runner.sql` configures a **five-minute** Supabase `pg_cron` job using `pg_net` and a Vault secret.
 
 Verify which schedule is active in the target environment, avoid unintended duplicate jobs, and check execution logs. A successful cron HTTP response does not guarantee every individual message was delivered.
 
@@ -135,14 +135,14 @@ Most integrations need both the environment variables above and provider-side co
 
 | Provider | Endpoint or setup | Notes |
 | --- | --- | --- |
-| Resend | \`/api/webhooks/resend\` | Verify sender DNS, signing secret, delivery and bounce handling |
-| Twilio SMS | \`/api/webhooks/twilio\` | Configure inbound and status callbacks |
-| Twilio voice | \`/api/webhooks/twilio-voice\` | Configure the inbound voice webhook and forwarding number |
-| Meta | \`/api/webhooks/meta\` | Facebook Lead Ads, Messenger, Instagram DMs and WhatsApp events; test workspace mapping |
-| Cal.com | \`/api/webhooks/calcom?ws=WORKSPACE_SLUG\` | Booking created, cancelled and rescheduled events |
-| Stripe | \`/api/webhooks/stripe\` | Payment and subscription events; test idempotency and reconciliation |
-| Other lead sources | \`/api/inbound\` | Requires \`Authorization: Bearer INBOUND_API_KEY\` |
-| Hosted forms | \`/api/forms/FORM_SLUG\` | Include workspace slug in the JSON request; complete abuse safeguards before public launch |
+| Resend | `/api/webhooks/resend` | Verify sender DNS, signing secret, delivery and bounce handling |
+| Twilio SMS | `/api/webhooks/twilio` | Configure inbound and status callbacks |
+| Twilio voice | `/api/webhooks/twilio-voice` | Configure the inbound voice webhook and forwarding number |
+| Meta | `/api/webhooks/meta` | Facebook Lead Ads, Messenger, Instagram DMs and WhatsApp events; test workspace mapping |
+| Cal.com | `/api/webhooks/calcom?ws=WORKSPACE_SLUG` | Booking created, cancelled and rescheduled events |
+| Stripe | `/api/webhooks/stripe` | Payment and subscription events; test idempotency and reconciliation |
+| Other lead sources | `/api/inbound` | Requires `Authorization: Bearer INBOUND_API_KEY` |
+| Hosted forms | `/api/forms/FORM_SLUG` | Include workspace slug in the JSON request; complete abuse safeguards before public launch |
 | Microsoft 365 | Settings → Outlook mailbox | Requires Microsoft OAuth application credentials and a live connection |
 
 Some Meta and inbound integrations currently select a single configured workspace. Do not connect multiple client accounts until the per-client routing checklist items are completed and tested.
@@ -156,16 +156,16 @@ Some Meta and inbound integrations currently select a single configured workspac
 - Verify Resend SPF, DKIM and DMARC, sending reputation and opt-out handling.
 - Respect UK GDPR and PECR when messaging contacts; record the correct consent or other lawful basis and retain opt-outs.
 - Do not rely on private storage exports as a replacement for tested backups and restoration.
-- Protect \`main\` with required CI checks and review before treating the repository as production-ready.
+- Protect `main` with required CI checks and review before treating the repository as production-ready.
 
 ## Working agreement for contributors
 
 The [Work Split rules](docs/WORKSPLIT.md) and the **Work Split** tab of the shared checklist determine task ownership.
 
-- ChatGPT contributors work on \`chatgpt/KD-xxx-short-name\` branches and open a PR for review. Do not push or merge to \`main\`.
+- ChatGPT contributors work on `chatgpt/KD-xxx-short-name` branches and open a PR for review. Do not push or merge to `main`.
 - Claude owns shared security, messaging, automation, billing and API code, and reviews/merges ChatGPT PRs.
 - New server actions for a self-contained feature belong in its own feature file.
-- Any proposed migration in ChatGPT-owned work starts at \`0050\`, and Claude alone applies migrations to the live database.
+- Any proposed migration in ChatGPT-owned work starts at `0050`, and Claude alone applies migrations to the live database.
 - Follow [design notes](docs/DESIGN_NOTES.md), British English and accessible UI conventions.
 - Keep checklist tasks at **In review** until acceptance criteria, CI and required real-world tests have been checked.
 
