@@ -213,52 +213,54 @@ export async function moveOpportunity(fd: FormData) {
 export async function createAutomation(fd: FormData) {
   const { ws } = await requireAdmin();
   const db = await supabaseServer();
+  const { parseSteps, triggerConfig } = await import("@/lib/automationSteps");
   const triggerType = String(fd.get("trigger_type"));
-  const triggerValue = s(fd, "trigger_value");
-  const config =
-    triggerType === "tag_added" ? { tag: triggerValue } : triggerType === "form_submitted" ? { form: triggerValue } : triggerType === "date_reached" ? (() => { const [field, off, yr] = (triggerValue ?? "").split(",").map((x) => x.trim()); return { field, offset_days: off || "0", yearly: yr === "yearly" ? "1" : "0" }; })() : {};
   const { data: a } = await db
     .from("automations")
-    .insert({ workspace_id: ws.id, name: s(fd, "name")!, trigger_type: triggerType, trigger_config: config })
+    .insert({ workspace_id: ws.id, name: s(fd, "name")!, trigger_type: triggerType, trigger_config: triggerConfig(triggerType, s(fd, "trigger_value")) })
     .select("id")
     .single();
   if (!a) return;
-  const lines = String(fd.get("steps") ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
-  const steps = lines.map((line, position) => {
-    const [type, ...rest] = line.split(":");
-    const arg = rest.join(":").trim();
-    const t = type.trim();
-    let config: Record<string, unknown> = {};
-    if (t === "send_email") {
-      const [subject, ...body] = arg.split("|");
-      config = { subject: subject.trim(), body: body.join("|").trim() };
-    } else if (t === "send_sms") config = { body: arg };
-    else if (t === "wait") config = { hours: Number(arg) || 24 };
-    else if (t === "add_tag" || t === "remove_tag") config = { tag: arg };
-    else if (t === "create_task") config = { title: arg };
-    else if (t === "notify") {
-      const [subject, ...body] = arg.split("|");
-      config = { subject: subject.trim(), body: body.join("|").trim() };
-    } else if (t === "create_opportunity") {
-      const [title, value, stage] = arg.split("|").map((x) => x.trim());
-      config = { title: title || "New opportunity", value: Number(value) || 0, stage: stage || undefined };
-    } else if (t === "wait_weekday") config = { hour: Number(arg) || 9 };
-    else if (t === "enrol") config = { automation: arg };
-    else if (t === "move_stage") config = { stage: arg };
-    else if (t === "skip_if" || t === "skip_unless") {
-      const [cond, n] = arg.split("|").map((x) => x.trim());
-      config = { cond, n: Number(n) || 1 };
-    } else if (t === "wait_until") {
-      const [cond, hours] = arg.split("|").map((x) => x.trim());
-      config = { cond, hours: Number(hours) || 24 };
-    } else if (t === "wait_before") {
-      const [hours, skip] = arg.split("|").map((x) => x.trim());
-      config = { hours: Number(hours) || 24, skip: Number(skip) || 0 };
-    } else if (t === "wait_after") config = { hours: Number(arg) || 1 };
-    else if (t === "webhook") config = { url: arg };
-    return { automation_id: a.id, workspace_id: ws.id, position, type: t, config };
-  });
+  const steps = parseSteps(String(fd.get("steps") ?? "")).map((st, position) => ({ automation_id: a.id, workspace_id: ws.id, position, ...st }));
   if (steps.length) await db.from("automation_steps").insert(steps);
+  revalidatePath("/automations");
+}
+
+/** Edits an automation in place: name, trigger and the whole step list. Contacts already mid-run carry on at their current step number. */
+export async function updateAutomation(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const { parseSteps, triggerConfig } = await import("@/lib/automationSteps");
+  const id = String(fd.get("id"));
+  const triggerType = String(fd.get("trigger_type"));
+  const { error } = await db.from("automations").update({ name: s(fd, "name")!, trigger_type: triggerType, trigger_config: triggerConfig(triggerType, s(fd, "trigger_value")) }).eq("id", id).eq("workspace_id", ws.id);
+  if (error) redirect(`/automations/${id}?error=` + encodeURIComponent(error.message));
+  const steps = parseSteps(String(fd.get("steps") ?? "")).map((st, position) => ({ automation_id: id, workspace_id: ws.id, position, ...st }));
+  await db.from("automation_steps").delete().eq("automation_id", id).eq("workspace_id", ws.id);
+  if (steps.length) {
+    const { error: e2 } = await db.from("automation_steps").insert(steps);
+    if (e2) redirect(`/automations/${id}?error=` + encodeURIComponent(e2.message));
+  }
+  await logActivity(ws.id, "user", "edited automation", "automation", id);
+  revalidatePath("/automations");
+  redirect("/automations?saved=1");
+}
+export async function deleteAutomation(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const id = String(fd.get("id"));
+  await (await supabaseServer()).from("automations").delete().eq("id", id).eq("workspace_id", ws.id);
+  await logActivity(ws.id, "user", "deleted automation", "automation", id);
+  redirect("/automations");
+}
+export async function duplicateAutomation(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const id = String(fd.get("id"));
+  const { data: a } = await db.from("automations").select("*").eq("id", id).eq("workspace_id", ws.id).single();
+  if (!a) return;
+  const { data: n } = await db.from("automations").insert({ workspace_id: ws.id, name: `${a.name} (copy)`, trigger_type: a.trigger_type, trigger_config: a.trigger_config, active: false }).select("id").single();
+  const { data: st } = await db.from("automation_steps").select("*").eq("automation_id", id).order("position");
+  if (n && st?.length) await db.from("automation_steps").insert(st.map((x) => ({ automation_id: n.id, workspace_id: ws.id, position: x.position, type: x.type, config: x.config })));
   revalidatePath("/automations");
 }
 
