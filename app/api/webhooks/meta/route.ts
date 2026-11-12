@@ -90,6 +90,10 @@ export async function POST(req: Request) {
         }
         for (const s of v.statuses ?? []) {
           const map: Record<string, string> = { delivered: "delivered", read: "delivered", failed: "failed", sent: "sent" };
+          if (s.status === "delivered" || s.status === "read") {
+            const { data: wm } = await db.from("messages").select("id,contact_id").eq("provider_id", s.id).maybeSingle();
+            if (wm) await db.from("message_events").insert({ workspace_id: ws.id, message_id: wm.id, contact_id: wm.contact_id, type: s.status });
+          }
           if (map[s.status]) await db.from("messages").update({ status: map[s.status], ...(s.status === "failed" ? { error: s.errors?.[0]?.title } : {}) }).eq("provider_id", s.id);
         }
       }

@@ -9,6 +9,9 @@ const nav = [
   ["/broadcast", "Bulk email"],
   ["/templates", "Templates"],
   ["/automations", "Automations"],
+  ["/analytics", "Analytics"],
+  ["/agent", "Comms agent"],
+  ["/knowledge", "Knowledge base"],
   ["/usage", "Usage"],
   ["/settings", "Settings"],
 ];

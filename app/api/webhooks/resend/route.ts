@@ -29,6 +29,8 @@ export async function POST(req: Request) {
   const status = map[event.type];
   if (status) {
     await db.from("messages").update({ status }).eq("provider_id", event.data.email_id);
+    const { data: em } = await db.from("messages").select("id,workspace_id,contact_id").eq("provider_id", event.data.email_id).maybeSingle();
+    if (em) await db.from("message_events").insert({ workspace_id: em.workspace_id, message_id: em.id, contact_id: em.contact_id, type: event.type === "email.delivered" ? "delivered" : event.type === "email.bounced" ? "bounced" : "complained" });
     if (event.type !== "email.delivered") {
       // Bounce or spam complaint: stop emailing this contact
       const { data: m } = await db.from("messages").select("contact_id").eq("provider_id", event.data.email_id).maybeSingle();

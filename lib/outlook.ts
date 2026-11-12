@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { linkify, trackHtml } from "./tracking";
 import { supabaseAdmin } from "./supabase/admin";
 
 const SCOPES = "offline_access User.Read Mail.Send Mail.ReadWrite";
@@ -80,11 +81,15 @@ export async function sendFromOutlook(
 ) {
   const base = { workspace_id: ws.id, contact_id: c.id, channel: "email", direction: "out", subject, body };
   const db = supabaseAdmin();
+  let msgId: string | undefined;
   try {
     if (!c.email) throw new Error("No email address");
     const a = await accessToken(ws.id);
     if (!a) throw new Error("Outlook is not connected");
-    const html = body.split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+    const { data: row } = await db.from("messages").insert({ ...base, status: "queued" }).select("id").single();
+    msgId = row?.id;
+    const plain = linkify(body).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+    const html = msgId ? trackHtml(plain, msgId) : plain;
     const r = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
       method: "POST",
       headers: { Authorization: `Bearer ${a.token}`, "Content-Type": "application/json" },
@@ -94,10 +99,12 @@ export async function sendFromOutlook(
       }),
     });
     if (!r.ok) throw new Error(`Graph sendMail ${r.status}: ${await r.text()}`);
-    await db.from("messages").insert({ ...base, status: "sent" });
+    if (msgId) await db.from("messages").update({ status: "sent" }).eq("id", msgId);
+    else await db.from("messages").insert({ ...base, status: "sent" });
     return { ok: true as const };
   } catch (e) {
-    await db.from("messages").insert({ ...base, status: "failed", error: String(e) });
+    if (msgId) await db.from("messages").update({ status: "failed", error: String(e) }).eq("id", msgId);
+    else await db.from("messages").insert({ ...base, status: "failed", error: String(e) });
     return { ok: false as const, error: String(e) };
   }
 }

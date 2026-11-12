@@ -11,6 +11,7 @@ export type Ws = {
   whatsapp_from: string | null;
   business_address: string | null;
   notify_email: string | null;
+  agent_mode: string;
 };
 
 /** Returns the signed-in user's workspaces and the active one (from the `ws` cookie, else the first). */

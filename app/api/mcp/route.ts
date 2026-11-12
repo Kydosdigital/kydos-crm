@@ -6,6 +6,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { render, sendEmail, toE164 } from "@/lib/messaging";
 import { sendFromOutlook } from "@/lib/outlook";
 import { fireTrigger } from "@/lib/automation";
+import { buildReport } from "@/lib/report";
+import { analyse, loadEngagement, PLAYBOOK, STATE_LABEL } from "@/lib/engagement";
+import { sendDraft } from "@/lib/agent";
 
 // MCP endpoint for chatting with the CRM from Claude. Auth: ?key=<MCP_API_KEY> or "Authorization: Bearer <MCP_API_KEY>".
 // The key unlocks the workspace whose slug is MCP_WORKSPACE_SLUG (default kydos-digital).
@@ -118,6 +121,35 @@ function buildServer() {
     let q = db.from("messages").select("contact_id,channel,direction,subject,body,status,created_at").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(limit ?? 20);
     if (direction) q = q.eq("direction", direction);
     return text((await q).data ?? []);
+  });
+
+  server.registerTool("engagement_report", { description: "Communications report: email and WhatsApp funnel (sent, delivered, opened, clicked, replied), contact states, hot leads, best subject lines.", inputSchema: { days: z.number().optional() } }, async ({ days }) => {
+    const ws = await workspace();
+    return text(await buildReport(ws.id, days ?? 7));
+  });
+
+  server.registerTool("hot_leads", { description: "Contacts ranked by engagement score with their state (opened no click, clicked not booked, replied awaiting us, etc.) and the suggested next move.", inputSchema: { limit: z.number().optional() } }, async ({ limit }) => {
+    const ws = await workspace();
+    const { msgs, events, contacts } = await loadEngagement(ws.id, 60);
+    const rows = analyse(msgs, events, contacts).rows.filter((r) => r.score > 0 || r.state === "reply_waiting").sort((a, b) => b.score - a.score).slice(0, limit ?? 15);
+    return text(rows.map((r) => ({ id: r.contact.id, name: [r.contact.first_name, r.contact.last_name].filter(Boolean).join(" "), email: r.contact.email, state: STATE_LABEL[r.state], score: r.score, sent: r.sent, opens: r.opens, clicks: r.clicks, replies: r.replies, why: PLAYBOOK[r.state].why, next: PLAYBOOK[r.state].do })));
+  });
+
+  server.registerTool("knowledge_base", { description: "List the agent knowledge base, or add/update an item (kind: service, offer_ladder, case_study, objection, faq, tone, rule).", inputSchema: { add_kind: z.string().optional(), add_title: z.string().optional(), add_body: z.string().optional() } }, async ({ add_kind, add_title, add_body }) => {
+    const ws = await workspace();
+    if (add_kind && add_title && add_body) {
+      const { error } = await db.from("knowledge_items").insert({ workspace_id: ws.id, kind: add_kind, title: add_title, body: add_body });
+      return text(error ? error.message : "Added");
+    }
+    return text((await db.from("knowledge_items").select("id,kind,title,body,active").eq("workspace_id", ws.id).order("kind")).data ?? []);
+  });
+
+  server.registerTool("agent_drafts", { description: "List pending drafts in the approval queue, or create one (contact_id, channel, body, subject), or approve and send / reject one by id.", inputSchema: { contact_id: z.string().optional(), channel: z.string().optional(), subject: z.string().optional(), body: z.string().optional(), approve_id: z.string().optional(), reject_id: z.string().optional() } }, async ({ contact_id, channel, subject, body, approve_id, reject_id }) => {
+    const ws = await workspace();
+    if (approve_id) return text(await sendDraft(ws, approve_id));
+    if (reject_id) { await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id); return text("Rejected"); }
+    if (contact_id && channel && body) { await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" }); return text("Draft added to queue"); }
+    return text((await db.from("agent_drafts").select("id,contact_id,channel,subject,body,state,hypothesis,source,status,created_at").eq("workspace_id", ws.id).eq("status", "pending").order("created_at", { ascending: false })).data ?? []);
   });
 
   server.registerTool("list_automations", { description: "List automations with run counts, and enrol a contact if enrol_contact_id is given.", inputSchema: { enrol_contact_id: z.string().optional(), automation_id: z.string().optional() } }, async ({ enrol_contact_id, automation_id }) => {

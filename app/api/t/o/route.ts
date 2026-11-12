@@ -1,0 +1,20 @@
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
+const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+
+// Open pixel. Apple Mail Privacy Protection and some gateways pre-fetch it, so opens are indicative only; clicks and replies are the real signals.
+export async function GET(req: Request) {
+  const m = new URL(req.url).searchParams.get("m") ?? "";
+  if (/^[0-9a-f-]{36}$/.test(m)) {
+    try {
+      const db = supabaseAdmin();
+      const { data: msg } = await db.from("messages").select("workspace_id,contact_id,created_at").eq("id", m).maybeSingle();
+      if (msg) {
+        const ua = req.headers.get("user-agent") ?? "";
+        const machine = Date.now() - new Date(msg.created_at).getTime() < 8000 || ua === "";
+        await db.from("message_events").insert({ workspace_id: msg.workspace_id, message_id: m, contact_id: msg.contact_id, type: "opened", machine });
+      }
+    } catch {}
+  }
+  return new Response(GIF, { headers: { "Content-Type": "image/gif", "Cache-Control": "no-store, max-age=0" } });
+}

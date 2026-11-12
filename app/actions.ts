@@ -349,3 +349,71 @@ export async function importContacts(fd: FormData) {
   }
   redirect(`/contacts/import?done=${created}&merged=${merged}&skipped=${skipped}`);
 }
+
+// ───────── Knowledge base and agent ─────────
+import { sendDraft, draftFor, agentAvailable } from "@/lib/agent";
+import { loadEngagement, analyse } from "@/lib/engagement";
+
+export async function saveKnowledge(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const id = s(fd, "id");
+  const row = { workspace_id: ws.id, kind: String(fd.get("kind")), title: s(fd, "title") ?? "Untitled", body: s(fd, "body") ?? "" };
+  if (id) await db.from("knowledge_items").update(row).eq("id", id);
+  else await db.from("knowledge_items").insert(row);
+  revalidatePath("/knowledge");
+}
+export async function deleteKnowledge(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("knowledge_items").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/knowledge");
+}
+export async function toggleKnowledge(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("knowledge_items").update({ active: fd.get("active") === "true" }).eq("id", String(fd.get("id")));
+  revalidatePath("/knowledge");
+}
+
+export async function createDraft(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const body = s(fd, "body");
+  if (!body) return;
+  await db.from("agent_drafts").insert({
+    workspace_id: ws.id, contact_id: String(fd.get("contact_id")), channel: String(fd.get("channel")), subject: s(fd, "subject"), body,
+    state: s(fd, "state"), tactic: s(fd, "tactic"), source: "manual", status: "pending",
+  });
+  revalidatePath("/agent");
+}
+export async function editDraft(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("agent_drafts").update({ subject: s(fd, "subject"), body: s(fd, "body") ?? "" }).eq("id", String(fd.get("id"))).eq("status", "pending");
+  revalidatePath("/agent");
+}
+export async function approveDraft(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const id = String(fd.get("id"));
+  const { data: d } = await db.from("agent_drafts").select("id").eq("id", id).maybeSingle(); // RLS check: draft belongs to this workspace
+  if (!d) return;
+  await sendDraft(ws as never, id);
+  revalidatePath("/agent");
+}
+export async function rejectDraft(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", String(fd.get("id")));
+  revalidatePath("/agent");
+}
+export async function setAgentMode(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("workspaces").update({ agent_mode: String(fd.get("mode")) }).eq("id", ws.id);
+  revalidatePath("/agent");
+}
+export async function askAgentToDraft(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  if (!agentAvailable()) return;
+  const { msgs, events, contacts } = await loadEngagement(ws.id, 60);
+  const row = analyse(msgs, events, contacts).rows.find((r) => r.contact.id === String(fd.get("contact_id")));
+  if (row) await draftFor(ws as never, row.contact.id, row.state);
+  revalidatePath("/agent");
+}

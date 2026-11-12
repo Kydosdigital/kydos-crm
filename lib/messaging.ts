@@ -2,6 +2,7 @@ import twilio from "twilio";
 import { Resend } from "resend";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "./supabase/admin";
+import { linkify, trackHtml } from "./tracking";
 
 type Workspace = {
   id: string;
@@ -69,7 +70,9 @@ export async function sendEmail(ws: Workspace, c: Contact, subject: string, body
     return { ok: false as const, error: "no sender" };
   }
   const unsub = `${appUrl()}/u/${c.id}?t=${unsubToken(c.id)}`;
-  const paragraphs = body.split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+  const db = supabaseAdmin();
+  const { data: row } = await db.from("messages").insert({ ...base, status: "queued" }).select("id").single();
+  const paragraphs = linkify(body).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
   const html = `${paragraphs}<hr><p style="font-size:12px;color:#666">${ws.name}${
     ws.business_address ? `, ${ws.business_address}` : ""
   }<br><a href="${unsub}">Unsubscribe</a></p>`;
@@ -78,14 +81,14 @@ export async function sendEmail(ws: Workspace, c: Contact, subject: string, body
       from: ws.email_from,
       to: c.email,
       subject,
-      html,
+      html: row ? trackHtml(html, row.id) : html,
       headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
     });
     if (error) throw new Error(error.message);
-    await log({ ...base, status: "sent", provider_id: data?.id });
+    if (row) await db.from("messages").update({ status: "sent", provider_id: data?.id }).eq("id", row.id);
     return { ok: true as const };
   } catch (e) {
-    await log({ ...base, status: "failed", error: String(e) });
+    if (row) await db.from("messages").update({ status: "failed", error: String(e) }).eq("id", row.id);
     return { ok: false as const, error: String(e) };
   }
 }
