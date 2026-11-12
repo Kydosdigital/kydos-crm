@@ -1,5 +1,6 @@
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { PoundSterling, CalendarCheck, Clock, Trophy, UserPlus, UserX } from "lucide-react";
 import { Badge, Card, CardTitle, Meter, Page, PageHeader, Segmented, Stat, TableCard } from "@/components/ui";
 
@@ -23,6 +24,29 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     db.from("contacts").select("id,source,utm_source,utm_medium,fbclid,gclid").eq("workspace_id", ws.id).limit(20000),
     db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).limit(10000),
   ]);
+
+  // Per-person performance: contacts owned, open tasks, and deals on the contacts they own.
+  const [{ data: members }, { data: owned }, { data: openTasks }] = await Promise.all([
+    supabaseAdmin().from("workspace_members").select("user_id").eq("workspace_id", ws.id),
+    db.from("contacts").select("id,owner_id,created_at").eq("workspace_id", ws.id).not("owner_id", "is", null).limit(20000),
+    db.from("tasks").select("assigned_to,due_at").eq("workspace_id", ws.id).eq("done", false).not("assigned_to", "is", null).limit(20000),
+  ]);
+  const userList = (members ?? []).length ? (await supabaseAdmin().auth.admin.listUsers({ page: 1, perPage: 1000 })).data.users : [];
+  const nameOf = (id: string) => userList.find((u) => u.id === id)?.email ?? "Unknown user";
+  const ownerOf = new Map((owned ?? []).map((c) => [c.id, c.owner_id as string]));
+  const team = (members ?? []).map((m) => {
+    const id = m.user_id as string;
+    const mine = (owned ?? []).filter((c) => c.owner_id === id);
+    const deals = (opps ?? []).filter((o) => ownerOf.get(o.contact_id) === id);
+    const wonNow = deals.filter((o) => o.status === "won" && o.closed_at && o.closed_at >= since);
+    const tasks = (openTasks ?? []).filter((t) => t.assigned_to === id);
+    return {
+      id, contacts: mine.length, newLeads: mine.filter((c) => c.created_at >= since).length,
+      openTasks: tasks.length, overdue: tasks.filter((t) => t.due_at && t.due_at < new Date().toISOString()).length,
+      openValue: deals.filter((o) => o.status === "open").reduce((a, o) => a + Number(o.value || 0), 0),
+      won: wonNow.length, wonValue: wonNow.reduce((a, o) => a + Number(o.value || 0), 0),
+    };
+  }).sort((a, b) => b.wonValue - a.wonValue || b.contacts - a.contacts);
 
   const contacts = (contactsBoth ?? []).filter((c) => c.created_at >= since);
   const prevContacts = (contactsBoth ?? []).filter((c) => c.created_at < since);
@@ -110,6 +134,16 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         {kpis.map(([l, v, icon, hint]) => <Stat key={l} label={l} value={v} icon={icon} hint={hint} tone={l === "Never contacted" && never > 0 ? "warning" : "brand"} />)}
       </div>
+
+      {team.length > 1 && (
+        <TableCard className="mb-6">
+          <div className="px-5 pb-1 pt-4"><CardTitle icon={Trophy}>Team performance</CardTitle></div>
+          <table className="table"><thead><tr><th>Person</th><th className="text-right">Contacts</th><th className="text-right">New ({days}d)</th><th className="text-right">Open pipeline</th><th className="text-right">Won ({days}d)</th><th className="text-right">Open tasks</th><th className="text-right">Overdue</th></tr></thead><tbody>
+            {team.map((t) => <tr key={t.id}><td className="font-medium text-ink">{nameOf(t.id)}</td><td className="tabular text-right">{t.contacts}</td><td className="tabular text-right">{t.newLeads}</td><td className="tabular text-right">{gbp(t.openValue)}</td><td className="tabular text-right">{t.won} ({gbp(t.wonValue)})</td><td className="tabular text-right">{t.openTasks}</td><td className="tabular text-right">{t.overdue ? <Badge tone="danger">{t.overdue}</Badge> : 0}</td></tr>)}
+          </tbody></table>
+          <p className="border-t border-line px-5 py-3 text-[13px] text-muted">Based on the owner set on each contact and the person each task is assigned to.</p>
+        </TableCard>
+      )}
 
       <Card className="mb-6">
         <CardTitle aside={<span className="tabular text-xs text-muted">Peak {maxDay} a day</span>}>New leads per day</CardTitle>
