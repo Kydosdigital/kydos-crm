@@ -6,6 +6,7 @@ import { sendMessage } from "../../actions";
 import { CornerUpLeft, ExternalLink, Inbox as InboxIcon, MessageSquare, Send } from "lucide-react";
 import { Avatar, Badge, ChannelIcon, EmptyState, Page, PageHeader, channelLabel, dateTime, personName } from "@/components/ui";
 import { ScrollEnd } from "@/components/ui/scroll-end";
+import { RefreshOnce } from "@/components/ui/refresh-once";
 
 type C = { id: string; first_name: string | null; last_name: string | null; email: string | null; phone: string | null; custom: Record<string, string> | null };
 const label = (c: C) => [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.phone || "Unknown";
@@ -16,7 +17,11 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
   const db = await supabaseServer();
 
   // Opening a thread marks its inbound messages as read.
+  let hadUnread = false;
   if (selected) {
+    const { count } = await supabaseAdmin().from("messages").select("id", { count: "exact", head: true })
+      .eq("workspace_id", ws.id).eq("contact_id", selected).eq("direction", "in").is("read_at", null);
+    hadUnread = (count ?? 0) > 0;
     await supabaseAdmin().from("messages").update({ read_at: new Date().toISOString() })
       .eq("workspace_id", ws.id).eq("contact_id", selected).eq("direction", "in").is("read_at", null);
   }
@@ -49,6 +54,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
 
   return (
     <Page>
+      <RefreshOnce when={hadUnread} />
       <PageHeader
         title="Inbox"
         meta={unreadCount > 0 ? <Badge tone="brand" dot>{unreadCount} unread</Badge> : undefined}
