@@ -645,3 +645,80 @@ export async function toggleTaskBoard(fd: FormData) {
   await (await supabaseServer()).from("tasks").update({ done: fd.get("done") === "true" }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
   revalidatePath("/tasks");
 }
+
+// ───────── Invoices ─────────
+export async function createInvoice(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const contactId = String(fd.get("contact_id"));
+  const kind = fd.get("kind") === "estimate" ? "estimate" : "invoice";
+  const { count } = await db.from("invoices").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id);
+  const number = `${kind === "estimate" ? "EST" : "INV"}-${String((count ?? 0) + 1).padStart(4, "0")}`;
+  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).single();
+  const row = { workspace_id: ws.id, contact_id: contactId, number, kind, description: s(fd, "description") ?? "Services", amount_gbp: Number(fd.get("amount")) || 0, due_date: s(fd, "due_date") };
+  const { data: inv, error } = await db.from("invoices").insert(row).select("id").single();
+  if (error || !inv) redirect("/invoices?error=" + encodeURIComponent(error?.message ?? "Could not create"));
+  let note = "";
+  if (kind === "invoice") {
+    try {
+      const link = await (await import("@/lib/stripe")).createPayLink({ id: inv.id, number, description: row.description, amount_gbp: row.amount_gbp, email: c?.email });
+      if (link) await db.from("invoices").update({ pay_url: link.url, stripe_session_id: link.sessionId }).eq("id", inv.id);
+      else note = "Created without a payment link: add STRIPE_SECRET_KEY in Vercel.";
+    } catch (e) { note = "Stripe: " + String(e); }
+  }
+  await logActivity(ws.id, "user", `created ${kind} ${number}`, "invoice", inv.id);
+  redirect("/invoices" + (note ? `?error=${encodeURIComponent(note)}` : ""));
+}
+export async function sendInvoice(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const { data: inv } = await db.from("invoices").select("*").eq("id", String(fd.get("id"))).single();
+  if (!inv) return;
+  const { data: c } = await db.from("contacts").select("*").eq("id", inv.contact_id).single();
+  if (!c) return;
+  const due = inv.due_date ? ` Due ${inv.due_date}.` : "";
+  const body = inv.kind === "estimate"
+    ? `Hi ${c.first_name || "there"},\n\nHere is your estimate ${inv.number}: ${inv.description}, £${Number(inv.amount_gbp).toFixed(2)}.\n\nReply to this email to accept it and we will get started.\n\nBest wishes,\n${ws.name}`
+    : `Hi ${c.first_name || "there"},\n\nInvoice ${inv.number}: ${inv.description}, £${Number(inv.amount_gbp).toFixed(2)}.${due}\n\n${inv.pay_url ? `Pay securely online: ${inv.pay_url}` : "Reply to this email for payment details."}\n\nThank you,\n${ws.name}`;
+  const r = await sendEmail(ws, c, `${inv.kind === "estimate" ? "Estimate" : "Invoice"} ${inv.number} from ${ws.name}`, body);
+  if (r.ok) await db.from("invoices").update({ status: "sent" }).eq("id", inv.id);
+  revalidatePath("/invoices");
+}
+export async function setInvoiceStatus(fd: FormData) {
+  await requireWorkspace();
+  const status = String(fd.get("status"));
+  await (await supabaseServer()).from("invoices").update({ status, ...(status === "paid" ? { paid_at: new Date().toISOString() } : {}) }).eq("id", String(fd.get("id")));
+  revalidatePath("/invoices");
+}
+
+// ───────── Content calendar ─────────
+export async function savePost(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const at = s(fd, "scheduled_at");
+  if (!at) redirect("/calendar?error=Pick a date and time");
+  await (await supabaseServer()).from("content_posts").insert({
+    workspace_id: ws.id, client: s(fd, "client") ?? "Kydos Digital", platform: s(fd, "platform") ?? "facebook", caption: s(fd, "caption")!, media_url: s(fd, "media_url"),
+    scheduled_at: new Date(new Date(at + "Z").getTime() - londonOffsetMs(at)).toISOString(), status: fd.get("for_approval") === "on" ? "awaiting_approval" : "draft",
+  });
+  revalidatePath("/calendar");
+}
+export async function setPostStatus(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("content_posts").update({ status: String(fd.get("status")) }).eq("id", String(fd.get("id")));
+  revalidatePath("/calendar");
+}
+export async function deletePost(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("content_posts").delete().eq("id", String(fd.get("id")));
+  revalidatePath("/calendar");
+}
+export async function createShare(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await (await supabaseServer()).from("calendar_shares").insert({ workspace_id: ws.id, client: s(fd, "client") ?? "Kydos Digital" });
+  revalidatePath("/calendar");
+}
+export async function deleteShare(fd: FormData) {
+  await requireWorkspace();
+  await (await supabaseServer()).from("calendar_shares").delete().eq("token", String(fd.get("token")));
+  revalidatePath("/calendar");
+}
