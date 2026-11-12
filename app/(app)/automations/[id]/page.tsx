@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { stepsToText, triggerValue } from "@/lib/automationSteps";
+import { StepBuilder } from "@/components/ui/step-builder";
 import { updateAutomation, deleteAutomation } from "../../../actions";
 import { Trash2 } from "lucide-react";
 import { Alert, Card, Field, Page, PageHeader } from "@/components/ui";
@@ -30,7 +31,7 @@ export default async function EditAutomation({ params, searchParams }: { params:
             <Field label="Trigger value"><input name="trigger_value" defaultValue={triggerValue(a.trigger_type, a.trigger_config as Record<string, unknown>)} placeholder="Tag or form slug. Date trigger: field_key, days offset (add , yearly)" className="input" /></Field>
           </div>
           <Field label="Steps" hint="Contacts already part-way through keep going from their current step number, so avoid reordering steps for live runs.">
-            <textarea name="steps" rows={16} defaultValue={stepsToText((steps ?? []) as { type: string; config: Record<string, unknown> }[])} spellCheck={false} className="textarea !font-mono !text-xs" />
+            <StepBuilder defaultValue={stepsToText((steps ?? []) as { type: string; config: Record<string, unknown> }[])} />
           </Field>
           <StepReference />
           <div className="flex gap-2"><button className="btn btn-primary">Save changes</button><Link href="/automations" className="btn btn-ghost">Cancel</Link></div>

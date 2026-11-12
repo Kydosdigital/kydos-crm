@@ -7,6 +7,7 @@ import { Bell, CheckSquare, Clock, Copy, GitBranch, KanbanSquare, Mail, MessageC
 import { Alert, Badge, EmptyState, Field, Page, PageHeader, humanise } from "@/components/ui";
 import { Modal } from "@/components/ui/modal";
 import { StepReference } from "./step-reference";
+import { StepBuilder } from "@/components/ui/step-builder";
 
 const STEP_ICON: Record<string, LucideIcon> = {
   send_email: Mail, send_sms: MessageSquareText, send_whatsapp: MessageCircle, notify: Bell, webhook: Webhook,
@@ -65,7 +66,7 @@ export default async function Automations({ searchParams }: { searchParams: Prom
                   <input name="trigger_value" placeholder="Tag or form slug (optional). Date trigger: field_key, days offset, e.g. renewal_date, -7 (add ,yearly for birthdays)" className="input" />
                 </Field>
               </div>
-              <Field label="Steps"><textarea name="steps" rows={8} defaultValue={example} spellCheck={false} className="textarea !font-mono !text-xs" /></Field>
+              <Field label="Steps"><StepBuilder defaultValue={example} /></Field>
               <StepReference />
               <button className="btn btn-primary self-start">Create automation</button>
             </form>
