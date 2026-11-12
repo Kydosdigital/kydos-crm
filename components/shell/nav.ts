@@ -1,6 +1,6 @@
 import {
   Activity, BarChart3, BookOpen, Bot, CalendarDays, CheckSquare, FileSignature, FileText, FormInput, Gauge, Inbox, KanbanSquare,
-  LineChart, ListFilter, Megaphone, Plug, Receipt, Repeat, Settings, TextQuote, Users, UsersRound, Workflow, LayoutTemplate,
+  LineChart, ListFilter, Megaphone, Plug, Receipt, Repeat, Settings, TextQuote, Users, UsersRound, Workflow, LayoutTemplate, MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +29,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/broadcast", label: "Campaigns", icon: Megaphone, keywords: "bulk email sms whatsapp broadcast" },
       { href: "/templates", label: "Templates", icon: LayoutTemplate, keywords: "email templates" },
+      { href: "/whatsapp", label: "WhatsApp templates", icon: MessageCircle, keywords: "whatsapp meta approved template" },
       { href: "/snippets", label: "Snippets", icon: TextQuote, keywords: "canned replies" },
       { href: "/calendar", label: "Content calendar", icon: CalendarDays, keywords: "social posts approval" },
     ],

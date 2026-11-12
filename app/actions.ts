@@ -906,3 +906,28 @@ export async function setLostReason(fd: FormData) {
   await db.from("opportunities").update({ lost_reason: s(fd, "lost_reason") ?? null }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
   revalidatePath("/pipeline");
 }
+
+// ───────── WhatsApp templates ─────────
+export async function submitWaTemplate(fd: FormData) {
+  await requireAdmin();
+  const { createWaTemplate } = await import("@/lib/whatsappTemplates");
+  const name = String(fd.get("name") ?? "").toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  const body = String(fd.get("body") ?? "").trim();
+  if (!name || !body) redirect("/whatsapp?error=" + encodeURIComponent("A name and message are required."));
+  const vars = new Set(body.match(/\{\{\d+\}\}/g) ?? []).size;
+  const examples = String(fd.get("examples") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (vars > examples.length) redirect("/whatsapp?error=" + encodeURIComponent(`Give ${vars} example value${vars === 1 ? "" : "s"}, comma separated. Meta needs them to review the template.`));
+  const r = await createWaTemplate({ name, category: fd.get("category") === "MARKETING" ? "MARKETING" : "UTILITY", language: String(fd.get("language") || "en_GB"), body, footer: s(fd, "footer") ?? undefined, examples });
+  if (!r.ok) redirect("/whatsapp?error=" + encodeURIComponent(r.error));
+  revalidatePath("/whatsapp");
+  redirect("/whatsapp?msg=" + encodeURIComponent("Submitted to Meta. Approval usually takes minutes to a day."));
+}
+
+export async function removeWaTemplate(fd: FormData) {
+  await requireAdmin();
+  const { deleteWaTemplate } = await import("@/lib/whatsappTemplates");
+  const r = await deleteWaTemplate(String(fd.get("name")));
+  if (!r.ok) redirect("/whatsapp?error=" + encodeURIComponent(r.error));
+  revalidatePath("/whatsapp");
+  redirect("/whatsapp?msg=" + encodeURIComponent("Template deleted."));
+}
