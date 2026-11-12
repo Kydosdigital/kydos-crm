@@ -696,6 +696,48 @@ export async function setInvoiceStatus(fd: FormData) {
   revalidatePath("/invoices");
 }
 
+// ───────── Retainers (monthly card subscriptions) ─────────
+export async function createRetainer(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await requireAdmin();
+  const db = await supabaseServer();
+  const contactId = String(fd.get("contact_id"));
+  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).single();
+  const row = { workspace_id: ws.id, contact_id: contactId, description: s(fd, "description") ?? "Monthly retainer", amount_gbp: Number(fd.get("amount")) || 0 };
+  const { data: r, error } = await db.from("retainers").insert(row).select("id").single();
+  if (error || !r) redirect("/retainers?error=" + encodeURIComponent(error?.message ?? "Could not create"));
+  let note = "";
+  try {
+    const link = await (await import("@/lib/stripe")).createRetainerLink({ id: r.id, description: row.description, amount_gbp: row.amount_gbp, email: c?.email });
+    if (link) await db.from("retainers").update({ checkout_url: link.url }).eq("id", r.id);
+    else note = "Created without a card link: add STRIPE_SECRET_KEY in Vercel.";
+  } catch (e) { note = "Stripe: " + String(e); }
+  await logActivity(ws.id, "user", "created retainer", "retainer", r.id, `£${row.amount_gbp}/month`);
+  redirect("/retainers" + (note ? `?error=${encodeURIComponent(note)}` : ""));
+}
+export async function sendRetainerLink(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  const db = await supabaseServer();
+  const { data: r } = await db.from("retainers").select("*").eq("id", String(fd.get("id"))).single();
+  if (!r?.checkout_url) return;
+  const { data: c } = await db.from("contacts").select("*").eq("id", r.contact_id).single();
+  if (!c) return;
+  const body = `Hi ${c.first_name || "there"},\n\nTo start your monthly plan (${r.description}, £${Number(r.amount_gbp).toFixed(2)} per month), please add your card using the secure button below. You will be charged each month automatically and can cancel any time by letting us know.\n\n[button: Set up monthly payment | ${r.checkout_url}]\n\nThank you,\n${ws.name}`;
+  await sendEmail(ws, c, `Your monthly plan with ${ws.name}`, body);
+  revalidatePath("/retainers");
+}
+export async function cancelRetainer(fd: FormData) {
+  const { ws } = await requireWorkspace();
+  await requireAdmin();
+  const db = await supabaseServer();
+  const { data: r } = await db.from("retainers").select("*").eq("id", String(fd.get("id"))).eq("workspace_id", ws.id).single();
+  if (!r) return;
+  if (r.stripe_subscription_id) await (await import("@/lib/stripe")).cancelStripeSubscription(r.stripe_subscription_id);
+  await db.from("retainers").update({ status: "cancelled" }).eq("id", r.id);
+  await logActivity(ws.id, "user", "cancelled retainer", "retainer", r.id);
+  revalidatePath("/retainers");
+}
+
 // ───────── Content calendar ─────────
 export async function savePost(fd: FormData) {
   const { ws } = await requireWorkspace();
