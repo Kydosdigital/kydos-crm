@@ -14,7 +14,7 @@ export default async function Contacts({ searchParams }: { searchParams: Promise
 
   return (
     <div className="max-w-5xl">
-      <h1 className="mb-4 text-2xl font-semibold">Contacts</h1>
+      <div className="mb-4 flex items-center justify-between"><h1 className="text-2xl font-semibold">Contacts</h1><Link href="/contacts/import" className="rounded border px-3 py-1 text-sm">Import CSV</Link></div>
       {error && <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
       <form className="mb-4 flex gap-2">
         <input name="q" defaultValue={q} placeholder="Search name, email, phone, company" className="w-80 rounded border p-2" />

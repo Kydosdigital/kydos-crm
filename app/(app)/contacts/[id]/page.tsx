@@ -1,19 +1,23 @@
 import { notFound } from "next/navigation";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { addNote, addTag, addTask, createOpportunity, sendMessage, toggleTask } from "../../../actions";
+import { addNote, addTag, addTask, createOpportunity, deleteContact, mergeContact, sendMessage, toggleTask, updateContact } from "../../../actions";
 
-export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; t?: string }> }) {
   const { id } = await params;
+  const { error, t: tplId } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
-  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }] = await Promise.all([
+  const [{ data: c }, { data: messages }, { data: notes }, { data: tasks }, { data: stages }, { data: templates }] = await Promise.all([
     db.from("contacts").select("*").eq("id", id).eq("workspace_id", ws.id).maybeSingle(),
     db.from("messages").select("*").eq("contact_id", id).order("created_at"),
     db.from("notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
     db.from("tasks").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
     db.from("stages").select("id,name").eq("workspace_id", ws.id).order("position"),
+    db.from("email_templates").select("*").eq("workspace_id", ws.id).order("name"),
   ]);
+  const tpl = (templates ?? []).find((x) => x.id === tplId);
+  const { data: conn } = await (await import("@/lib/supabase/admin")).supabaseAdmin().from("mail_connections").select("account_email").eq("workspace_id", ws.id).maybeSingle();
   if (!c) notFound();
 
   return (
@@ -24,6 +28,33 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         <p className="mt-1 text-xs text-gray-500">
           {c.email_opt_out && "Email opted out. "}{c.sms_opt_out && "SMS opted out. "}{c.consent_note && `Consent: ${c.consent_note}`}
         </p>
+
+        {error && <p className="mt-2 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+        <details className="mt-3 rounded border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Edit, merge or delete</summary>
+          <form action={updateContact} className="mt-3 grid grid-cols-2 gap-2">
+            <input type="hidden" name="contact_id" value={c.id} />
+            <input name="first_name" defaultValue={c.first_name ?? ""} placeholder="First name" className="rounded border p-1" />
+            <input name="last_name" defaultValue={c.last_name ?? ""} placeholder="Last name" className="rounded border p-1" />
+            <input name="email" defaultValue={c.email ?? ""} placeholder="Email" className="rounded border p-1" />
+            <input name="phone" defaultValue={c.phone ?? ""} placeholder="Phone" className="rounded border p-1" />
+            <input name="company" defaultValue={c.company ?? ""} placeholder="Company" className="rounded border p-1" />
+            <input name="tags" defaultValue={c.tags.join(", ")} placeholder="Tags" className="rounded border p-1" />
+            <input name="consent_note" defaultValue={c.consent_note ?? ""} placeholder="Consent note" className="col-span-2 rounded border p-1" />
+            <label><input type="checkbox" name="email_opt_out" defaultChecked={c.email_opt_out} className="mr-1" />Email opted out</label>
+            <label><input type="checkbox" name="sms_opt_out" defaultChecked={c.sms_opt_out} className="mr-1" />SMS opted out</label>
+            <button className="col-span-2 rounded border px-2 py-1">Save changes</button>
+          </form>
+          <form action={mergeContact} className="mt-3 flex gap-2">
+            <input type="hidden" name="contact_id" value={c.id} />
+            <input name="other_email" placeholder="Duplicate's email, merged into this contact" className="flex-1 rounded border p-1" />
+            <button className="rounded border px-2">Merge</button>
+          </form>
+          <form action={deleteContact} className="mt-3">
+            <input type="hidden" name="contact_id" value={c.id} />
+            <button className="text-red-700 underline">Delete this contact and its history</button>
+          </form>
+        </details>
 
         <h2 className="mb-2 mt-6 font-semibold">Conversation</h2>
         <div className="mb-4 flex max-h-96 flex-col gap-2 overflow-y-auto rounded border p-3">
@@ -40,12 +71,14 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           <div className="flex gap-2">
             <select name="channel" className="rounded border p-2">
               <option value="sms">SMS</option>
-              <option value="email">Email</option>
+              <option value="email">Email (Resend)</option>
+              {conn && <option value="outlook">Email (Outlook: {conn.account_email})</option>}
               <option value="whatsapp">WhatsApp</option>
             </select>
-            <input name="subject" placeholder="Subject (email only)" className="flex-1 rounded border p-2" />
+            <input name="subject" defaultValue={tpl?.subject} placeholder="Subject (email only)" className="flex-1 rounded border p-2" />
           </div>
-          <textarea name="body" rows={3} placeholder="Message" required className="rounded border p-2" />
+          <textarea name="body" rows={3} defaultValue={tpl?.body} placeholder="Message" required className="rounded border p-2" />
+          {(templates ?? []).length > 0 && <p className="text-xs text-gray-500">Templates: {(templates ?? []).map((x) => <a key={x.id} className="mr-2 underline" href={`/contacts/${c.id}?t=${x.id}`}>{x.name}</a>)}</p>}
           <button className="self-start rounded bg-black px-4 py-2 text-white">Send</button>
         </form>
       </section>

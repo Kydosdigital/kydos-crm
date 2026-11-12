@@ -19,6 +19,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <input name="email_from" defaultValue={active.email_from ?? ""} placeholder='Email sender, e.g. Kydos Digital <hello@kydosdigital.com>' className="rounded border p-2" />
             <input name="sms_from" defaultValue={active.sms_from ?? ""} placeholder="SMS sender: +44 number, alphanumeric ID, or Messaging Service SID (MG...)" className="rounded border p-2" />
             <input name="whatsapp_from" defaultValue={active.whatsapp_from ?? ""} placeholder="WhatsApp sender, e.g. whatsapp:+447..." className="rounded border p-2" />
+            <input name="notify_email" defaultValue={active.notify_email ?? ""} placeholder="Alert email for internal notifications and failures, e.g. you@kydosdigital.com" className="rounded border p-2" />
             <input name="business_address" defaultValue={active.business_address ?? ""} placeholder="Postal address for email footers (required for compliance)" className="rounded border p-2" />
             <button className="self-start rounded bg-black px-4 py-2 text-white">Save</button>
           </form>
@@ -32,8 +33,29 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <ul className="mb-8 list-disc pl-5 text-sm text-gray-700">
             <li>Twilio inbound + status webhook: <code>{url}/api/webhooks/twilio</code></li>
             <li>Resend webhook: <code>{url}/api/webhooks/resend</code></li>
+            <li>Cal.com webhook: <code>{url}/api/webhooks/calcom?ws={active.slug}</code> (events: booking created, cancelled; secret = CALCOM_WEBHOOK_SECRET)</li>
             <li>Website form endpoint: POST JSON to <code>{url}/api/forms/contact-us</code> with <code>{`{"workspace":"${active.slug}","email":"..."}`}</code></li>
           </ul>
+          <h2 className="mb-1 font-semibold">Website form snippet</h2>
+          <p className="mb-1 text-sm text-gray-700">Paste this into any page on kydosdigital.com. Change the form name (contact-us) to trigger different automations.</p>
+          <pre className="mb-8 overflow-x-auto rounded bg-gray-50 p-3 text-xs">{`<form id="kydos-form">
+  <input name="first_name" placeholder="First name" required>
+  <input name="email" type="email" placeholder="Email" required>
+  <input name="phone" placeholder="Phone">
+  <label><input type="checkbox" name="consent"> I agree to be contacted by email about my enquiry</label>
+  <button>Send</button>
+</form>
+<script>
+document.getElementById("kydos-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await fetch("${url}/api/forms/contact-us", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on" })
+  });
+  e.target.innerHTML = "Thanks, we will be in touch.";
+});
+</script>`}</pre>
         </>
       )}
 

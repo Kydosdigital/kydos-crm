@@ -1,5 +1,20 @@
 import { supabaseAdmin } from "./supabase/admin";
 import { render, sendEmail, sendSms } from "./messaging";
+import { notifyOwner } from "./notify";
+
+/** Next weekday (Mon to Fri) at the given hour, London time. */
+function nextWeekdayAt(hour: number) {
+  const base = new Date();
+  base.setMinutes(0, 0, 0);
+  for (let h = 1; h <= 200; h++) {
+    const t = new Date(base.getTime() + h * 3600_000);
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", hour: "numeric", hour12: false }).formatToParts(t);
+    const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const hr = Number(parts.find((p) => p.type === "hour")?.value);
+    if (!["Sat", "Sun"].includes(wd) && hr % 24 === hour) return t;
+  }
+  return new Date(Date.now() + 24 * 3600_000);
+}
 
 export type TriggerEvent =
   | { type: "contact_created" }
@@ -51,6 +66,7 @@ export async function processDueRuns(limit = 50) {
       await advance(run);
     } catch (e) {
       await db.from("automation_runs").update({ status: "failed", last_error: String(e) }).eq("id", run.id);
+      await notifyOwner(run.workspace_id, "Automation run failed", `Run ${run.id} failed: ${String(e)}`);
     }
     processed++;
   }
@@ -88,12 +104,35 @@ async function advance(run: { id: string; workspace_id: string; automation_id: s
       await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id);
       break;
     case "move_stage": {
-      const { data: stage } = await db.from("stages").select("id,pipeline_id").eq("id", String(cfg.stage_id)).single();
+      const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
+      const { data: stage } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
       if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
       break;
     }
     case "create_task":
       await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+      break;
+    case "notify":
+      await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
+      break;
+    case "create_opportunity": {
+      const { data: open } = await db.from("opportunities").select("id").eq("contact_id", contact.id).eq("status", "open").limit(1);
+      if (open?.length) break;
+      const sq = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
+      const { data: stage } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
+      if (stage) await db.from("opportunities").insert({ workspace_id: ws.id, contact_id: contact.id, pipeline_id: stage.pipeline_id, stage_id: stage.id, title: render(String(cfg.title ?? "New opportunity"), contact), value: Number(cfg.value ?? 0) || 0 });
+      break;
+    }
+    case "enrol": {
+      const { data: target } = await db.from("automations").select("id").eq("workspace_id", ws.id).ilike("name", String(cfg.automation ?? "")).maybeSingle();
+      if (target) {
+        const { data: active } = await db.from("automation_runs").select("id").eq("automation_id", target.id).eq("contact_id", contact.id).eq("status", "active").maybeSingle();
+        if (!active) await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id: target.id, contact_id: contact.id });
+      }
+      break;
+    }
+    case "wait_weekday":
+      nextAt = nextWeekdayAt(Number(cfg.hour ?? 9));
       break;
     case "wait":
       nextAt = new Date(Date.now() + Number(cfg.hours ?? 24) * 3600_000);

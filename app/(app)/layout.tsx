@@ -6,6 +6,8 @@ const nav = [
   ["/contacts", "Contacts"],
   ["/pipeline", "Pipeline"],
   ["/inbox", "Inbox"],
+  ["/broadcast", "Bulk email"],
+  ["/templates", "Templates"],
   ["/automations", "Automations"],
   ["/usage", "Usage"],
   ["/settings", "Settings"],

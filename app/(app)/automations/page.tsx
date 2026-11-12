@@ -49,7 +49,7 @@ export default async function Automations() {
           <input name="trigger_value" placeholder="Tag name or form slug (optional)" className="flex-1 rounded border p-2" />
         </div>
         <textarea name="steps" rows={8} defaultValue={example} className="rounded border p-2 font-mono text-sm" />
-        <p className="text-xs text-gray-500">One step per line. Steps: send_email: Subject | Body, send_sms: Body, wait: hours, stop_if_replied, add_tag: x, remove_tag: x, create_task: title. Use {"{{first_name}}"}.</p>
+        <p className="text-xs text-gray-500">One step per line. Steps: send_email: Subject | Body, send_sms: Body, wait: hours, stop_if_replied, add_tag: x, remove_tag: x, create_task: title, move_stage: Stage name, notify: Subject | Body (emails you), create_opportunity: Title | value | Stage, wait_weekday: 9 (next weekday at 9am), enrol: Other automation name. Use {"{{first_name}}"}.</p>
         <button className="self-start rounded bg-black px-4 py-2 text-white">Create automation</button>
       </form>
     </div>
