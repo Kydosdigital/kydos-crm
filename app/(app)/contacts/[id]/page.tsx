@@ -17,7 +17,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
     db.from("messages").select("*").eq("contact_id", id).order("created_at"),
     db.from("notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
     db.from("tasks").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
-    db.from("stages").select("id,name").eq("workspace_id", ws.id).order("position"),
+    db.from("stages").select("id,name,pipelines(name)").eq("workspace_id", ws.id).order("position"),
     db.from("email_templates").select("*").eq("workspace_id", ws.id).order("name"),
     db.from("custom_fields").select("*").eq("workspace_id", ws.id).order("label"),
     db.from("bookings").select("*").eq("contact_id", id).order("start_time", { ascending: false }),
@@ -225,7 +225,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
               <input name="title" placeholder="Opportunity title" aria-label="Opportunity title" className="input input-sm" />
               <div className="flex gap-1.5">
                 <input name="value" type="number" step="0.01" placeholder="Value (£)" aria-label="Value in pounds" className="input input-sm" />
-                <select name="stage_id" aria-label="Stage" className="select input-sm">{(stages ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                <select name="stage_id" aria-label="Stage" className="select input-sm">{(stages ?? []).map((s) => <option key={s.id} value={s.id}>{(s.pipelines as unknown as { name: string } | null)?.name ? `${(s.pipelines as unknown as { name: string }).name}: ` : ""}{s.name}</option>)}</select>
               </div>
               <button className="btn btn-secondary btn-sm">Add</button>
             </form>

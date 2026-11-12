@@ -1,19 +1,24 @@
 import Link from "next/link";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { moveOpportunity, createOpportunity, setLostReason } from "../../actions";
+import { moveOpportunity, createOpportunity, setLostReason, createPipeline, deletePipeline } from "../../actions";
 import { StageSelect } from "@/components/shell/stage-select";
 import { Modal } from "@/components/ui/modal";
 import { KanbanSquare, Plus } from "lucide-react";
 import { PipelineDnd } from "@/components/shell/pipeline-dnd";
-import { Avatar, EmptyState, Page, PageHeader, personName } from "@/components/ui";
+import { Alert, Avatar, EmptyState, Page, PageHeader, personName } from "@/components/ui";
+import { currentRole } from "@/lib/workspace";
 
-export default async function Pipeline() {
+export default async function Pipeline({ searchParams }: { searchParams: Promise<{ p?: string; error?: string }> }) {
+  const { p, error } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
+  const role = await currentRole(ws.id);
+  const { data: pipes } = await db.from("pipelines").select("id,name").eq("workspace_id", ws.id).order("created_at");
+  const pipe = (pipes ?? []).find((x) => x.id === p) ?? (pipes ?? [])[0];
   const [{ data: stages }, { data: opps }] = await Promise.all([
-    db.from("stages").select("*").eq("workspace_id", ws.id).order("position"),
-    db.from("opportunities").select("*, contacts(first_name,last_name,email)").eq("workspace_id", ws.id),
+    db.from("stages").select("*").eq("workspace_id", ws.id).eq("pipeline_id", pipe?.id ?? "").order("position"),
+    db.from("opportunities").select("*, contacts(first_name,last_name,email)").eq("workspace_id", ws.id).eq("pipeline_id", pipe?.id ?? ""),
   ]);
   const { data: contacts } = await db.from("contacts").select("id,first_name,last_name,email").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(300);
   const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
@@ -44,6 +49,22 @@ export default async function Pipeline() {
           <div><div className="eyebrow">Total value</div><div className="tabular text-lg font-semibold leading-tight text-ink">{gbp.format(grand)}</div></div>
         </div>}
       />
+      {error && <Alert tone="danger">{error}</Alert>}
+      <div className="mb-5 flex flex-wrap items-center gap-1.5">
+        {(pipes ?? []).map((x) => <Link key={x.id} href={`/pipeline?p=${x.id}`} className={`badge !px-3 !py-1.5 text-[13px] ${x.id === pipe?.id ? "badge-brand" : "hover:text-ink"}`}>{x.name}</Link>)}
+        {role !== "member" && (
+          <Modal trigger={<><Plus aria-hidden />New pipeline</>} triggerClassName="btn btn-secondary btn-sm" title="New pipeline" description="Won and Lost stages are added automatically.">
+            <form action={createPipeline} className="flex flex-col gap-3">
+              <div><label className="label" htmlFor="pl-name">Name</label><input id="pl-name" name="name" required placeholder="e.g. Retainers" className="input" /></div>
+              <div><label className="label" htmlFor="pl-stages">Stages, one per line</label><textarea id="pl-stages" name="stages" rows={5} defaultValue={"New\nContacted\nProposal"} className="textarea" /></div>
+              <button className="btn btn-primary self-start">Create pipeline</button>
+            </form>
+          </Modal>
+        )}
+        {role !== "member" && pipe && (pipes ?? []).length > 1 && (
+          <form action={deletePipeline} className="ml-auto"><input type="hidden" name="id" value={pipe.id} /><button className="btn btn-danger btn-sm" data-confirm="Delete this pipeline and its stages?">Delete this pipeline</button></form>
+        )}
+      </div>
       {(stages ?? []).length === 0 && <div className="card"><EmptyState icon={KanbanSquare} title="No pipeline stages yet">Stages appear here once they are set up for this business.</EmptyState></div>}
       <datalist id="lost-reasons">{["Price too high", "Went with a competitor", "No budget", "No response", "Not a good fit", "Timing"].map((r) => <option key={r} value={r} />)}</datalist>
       <PipelineDnd>

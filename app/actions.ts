@@ -191,6 +191,35 @@ export async function createOpportunity(fd: FormData) {
   revalidatePath("/pipeline");
 }
 
+export async function createPipeline(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const name = s(fd, "name");
+  if (!name) redirect("/pipeline?error=" + encodeURIComponent("Give the pipeline a name."));
+  const names = String(fd.get("stages") ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+  const open = names.filter((x) => !["won", "lost"].includes(x.toLowerCase()));
+  const all = [...(open.length ? open : ["New", "Contacted", "Proposal"]), "Won", "Lost"];
+  const { data: p } = await db.from("pipelines").insert({ workspace_id: ws.id, name }).select("id").single();
+  if (!p) redirect("/pipeline?error=" + encodeURIComponent("Could not create the pipeline."));
+  await db.from("stages").insert(all.map((n, i) => ({ workspace_id: ws.id, pipeline_id: p.id, name: n, position: i })));
+  await logActivity(ws.id, "user", `created pipeline ${name}`, "pipeline", p.id);
+  revalidatePath("/pipeline");
+  redirect("/pipeline?p=" + p.id);
+}
+
+export async function deletePipeline(fd: FormData) {
+  const { ws } = await requireAdmin();
+  const db = await supabaseServer();
+  const id = String(fd.get("id"));
+  const { count } = await db.from("opportunities").select("id", { count: "exact", head: true }).eq("pipeline_id", id);
+  if ((count ?? 0) > 0) redirect("/pipeline?p=" + id + "&error=" + encodeURIComponent("Move or delete this pipeline's opportunities first."));
+  const { count: total } = await db.from("pipelines").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id);
+  if ((total ?? 0) <= 1) redirect("/pipeline?error=" + encodeURIComponent("You need at least one pipeline."));
+  await db.from("pipelines").delete().eq("id", id).eq("workspace_id", ws.id);
+  revalidatePath("/pipeline");
+  redirect("/pipeline");
+}
+
 export async function moveOpportunity(fd: FormData) {
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
