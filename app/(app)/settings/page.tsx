@@ -27,9 +27,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <input name="call_forward_number" defaultValue={active.call_forward_number ?? ""} placeholder="Your mobile: incoming calls ring here first, missed ones get a WhatsApp" className="rounded border p-2" />
             <input name="missed_call_template" defaultValue={active.missed_call_template ?? ""} placeholder="Approved WhatsApp template sent after a missed call (uses {{1}} = first name)" className="rounded border p-2" />
             <input name="missed_call_text" defaultValue={active.missed_call_text ?? ""} placeholder="Missed-call message if the 24h WhatsApp window is open" className="rounded border p-2" />
+            <input name="brand_color" defaultValue={active.brand_color ?? "#1f3a5f"} placeholder="Brand colour, e.g. #1f3a5f" className="rounded border p-2" />
+            <input name="logo_url" defaultValue={active.logo_url ?? ""} placeholder="Logo image link for emails (PNG or JPG, public https link, about 220px wide)" className="rounded border p-2" />
+            <input name="website_url" defaultValue={active.website_url ?? ""} placeholder="Website, shown in the email footer" className="rounded border p-2" />
+            <input name="reply_to" defaultValue={active.reply_to ?? ""} placeholder="Reply-to address for emails, e.g. hello@kydosdigital.com" className="rounded border p-2" />
+            <textarea name="email_signature" rows={3} defaultValue={active.email_signature ?? ""} placeholder="Email signature added under every email, e.g. Stephen Owojori, Director, Kydos Digital, 07..." className="rounded border p-2" />
             <input name="business_address" defaultValue={active.business_address ?? ""} placeholder="Postal address for email footers (required for compliance)" className="rounded border p-2" />
             <button className="self-start rounded bg-black px-4 py-2 text-white">Save</button>
           </form>
+
+          <h2 className="mb-1 font-semibold">Email preview</h2>
+          <p className="mb-2 text-sm text-gray-700">Every email from automations, bulk sends and invoices uses this branded layout. Save settings, then refresh to see changes. In email text you can use ## Heading, - bullets, **bold**, and buttons written as [button: Label | https://link].</p>
+          <iframe src="/api/email-preview" className="mb-8 h-[560px] w-full rounded border bg-white" title="Email preview" />
 
           <h2 className="mb-1 font-semibold">Outlook mailbox</h2>
           {connected === "outlook" && <p className="mb-2 rounded bg-green-50 p-2 text-sm text-green-700">Outlook connected.</p>}

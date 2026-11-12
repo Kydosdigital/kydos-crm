@@ -15,6 +15,11 @@ export type Ws = {
   booking_link: string | null;
   review_link: string | null;
   meta_dataset_id: string | null;
+  brand_color: string | null;
+  logo_url: string | null;
+  email_signature: string | null;
+  reply_to: string | null;
+  website_url: string | null;
   call_number: string | null;
   call_forward_number: string | null;
   missed_call_template: string | null;

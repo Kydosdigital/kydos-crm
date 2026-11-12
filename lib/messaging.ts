@@ -2,7 +2,8 @@ import twilio from "twilio";
 import { Resend } from "resend";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseAdmin } from "./supabase/admin";
-import { linkify, trackHtml } from "./tracking";
+import { trackHtml } from "./tracking";
+import { brandEmail, brandText } from "./emailBrand";
 
 type Workspace = {
   id: string;
@@ -11,6 +12,11 @@ type Workspace = {
   sms_from: string | null;
   whatsapp_from: string | null;
   business_address: string | null;
+  brand_color?: string | null;
+  logo_url?: string | null;
+  email_signature?: string | null;
+  reply_to?: string | null;
+  website_url?: string | null;
 };
 type Contact = {
   id: string;
@@ -74,16 +80,15 @@ export async function sendEmail(ws: Workspace, c: Contact, subject: string, body
   const unsub = `${appUrl()}/u/${c.id}?t=${unsubToken(c.id)}`;
   const db = supabaseAdmin();
   const { data: row } = await db.from("messages").insert({ ...base, status: "queued" }).select("id").single();
-  const paragraphs = linkify(body).split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
-  const html = `${paragraphs}<hr><p style="font-size:12px;color:#666">${ws.name}${
-    ws.business_address ? `, ${ws.business_address}` : ""
-  }<br><a href="${unsub}">Unsubscribe</a></p>`;
+  const html = brandEmail(ws, body, { unsubscribeUrl: unsub, preheader: body.replace(/\s+/g, " ").slice(0, 110) });
   try {
     const { data, error } = await new Resend(process.env.RESEND_API_KEY).emails.send({
       from: ws.email_from,
       to: c.email,
       subject,
       html: row ? trackHtml(html, row.id) : html,
+      text: brandText(ws, body, unsub),
+      ...(ws.reply_to ? { replyTo: ws.reply_to } : {}),
       headers: { "List-Unsubscribe": `<${unsub}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
     });
     if (error) throw new Error(error.message);
