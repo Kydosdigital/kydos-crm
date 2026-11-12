@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/* Kydos CRM: restrained palette. Warm off-white ground, near-black ink, one deep navy accent. */
+:root {
+  --background: #fafaf8;
+  --foreground: #1c1f26;
+  --muted: #6b7280;
+  --line: #e4e4df;
+  --panel: #ffffff;
+  --accent: #1f3a5f;
+  --accent-hover: #17304f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1 { letter-spacing: -0.01em; }
+
+/* Form controls */
+input, select, textarea {
+  background: var(--panel);
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  color: var(--foreground);
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(31, 58, 95, 0.12);
+}
+input::placeholder, textarea::placeholder { color: #9ca3af; }
+
+/* Buttons: primary (was black) uses the accent; bordered buttons stay quiet */
+button { cursor: pointer; border-radius: 6px; }
+.bg-black { background: var(--accent) !important; border-radius: 6px; }
+.bg-black:hover { background: var(--accent-hover) !important; }
+button.border { border-color: var(--line); background: var(--panel); }
+button.border:hover { background: #f3f3ef; }
+
+/* Surfaces */
+.border { border-color: var(--line); }
+.rounded.border, .rounded-lg.border { background: var(--panel); }
+table thead { font-weight: 500; }
+a { color: inherit; }
