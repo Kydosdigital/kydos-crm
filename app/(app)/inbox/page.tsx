@@ -146,7 +146,7 @@ export default async function Inbox({ searchParams }: { searchParams: Promise<{ 
                   </div>
                   <div className="flex items-end gap-2">
                     <textarea name="body" rows={2} placeholder="Write a reply" aria-label="Message" required className="textarea flex-1" />
-                    <button className="btn btn-primary shrink-0"><Send aria-hidden />Send</button>
+                    <button data-toast="Message sent" className="btn btn-primary shrink-0"><Send aria-hidden />Send</button>
                   </div>
                 </form>
               </>

@@ -141,7 +141,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
                   {(templates ?? []).length > 0 && <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted"><span className="w-16 shrink-0">Templates</span>{(templates ?? []).map((x) => <a key={x.id} className={`badge hover:text-ink ${x.id === tplId ? "badge-brand" : ""}`} href={`/contacts/${c.id}?t=${x.id}`}>{x.name}</a>)}</p>}
                   {(snippets ?? []).length > 0 && <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted"><span className="w-16 shrink-0">Snippets</span>{(snippets ?? []).map((x) => <a key={x.id} className={`badge hover:text-ink ${x.id === snipId ? "badge-brand" : ""}`} href={`/contacts/${c.id}?s=${x.id}`}>{x.name}</a>)}</p>}
                 </div>
-                <button className="btn btn-primary shrink-0"><Send aria-hidden />Send</button>
+                <button data-toast="Message sent" className="btn btn-primary shrink-0"><Send aria-hidden />Send</button>
               </div>
             </form>
           </div>

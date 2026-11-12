@@ -2,6 +2,7 @@ import { LogOut } from "lucide-react";
 import { getWorkspaces, currentRole } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ConfirmHost } from "@/components/shell/confirm-host";
+import { ToastHost } from "@/components/shell/toast-host";
 import { logout, switchWorkspace } from "../actions";
 import { KydosWordmark } from "@/components/shell/logo";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
@@ -54,6 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
       <ConfirmHost />
+      <ToastHost />
       <main id="main" className="min-w-0 flex-1">{children}</main>
     </div>
   );
