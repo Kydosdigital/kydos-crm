@@ -4,6 +4,7 @@ import { agentSweep } from "@/lib/agent";
 import { weeklyReportIfDue } from "@/lib/report";
 import { processScheduledSends, processDateTriggers } from "@/lib/scheduled";
 import { nightlyBackupIfDue } from "@/lib/backup";
+import { dailyDigestIfDue } from "@/lib/digest";
 
 export const maxDuration = 60;
 
@@ -17,6 +18,7 @@ export async function GET(req: Request) {
   const backup = await nightlyBackupIfDue();
   const synced = await syncAllInboxes();
   const reports = await weeklyReportIfDue();
+  const digest = await dailyDigestIfDue();
   const agent = await agentSweep(); // no-op until ANTHROPIC_API_KEY is set and a workspace agent_mode is on
-  return Response.json({ processed, scheduled, dates, backup, synced, reports, agent });
+  return Response.json({ processed, scheduled, dates, backup, synced, reports, digest, agent });
 }
