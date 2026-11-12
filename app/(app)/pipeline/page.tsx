@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { moveOpportunity } from "../../actions";
-import { ArrowRight, KanbanSquare } from "lucide-react";
+import { moveOpportunity, createOpportunity } from "../../actions";
+import { StageSelect } from "@/components/shell/stage-select";
+import { Modal } from "@/components/ui/modal";
+import { KanbanSquare, Plus } from "lucide-react";
 import { PipelineDnd } from "@/components/shell/pipeline-dnd";
 import { Avatar, EmptyState, Page, PageHeader, personName } from "@/components/ui";
 
@@ -13,6 +15,7 @@ export default async function Pipeline() {
     db.from("stages").select("*").eq("workspace_id", ws.id).order("position"),
     db.from("opportunities").select("*, contacts(first_name,last_name,email)").eq("workspace_id", ws.id),
   ]);
+  const { data: contacts } = await db.from("contacts").select("id,first_name,last_name,email").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(300);
   const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
 
   const DOTS = ["bg-info-ink", "bg-violet-ink", "bg-warning-ink", "bg-brand-text", "bg-success-ink", "bg-danger-ink"];
@@ -24,6 +27,18 @@ export default async function Pipeline() {
         title="Pipeline"
         description="Every opportunity by stage. Drag a card to another stage, or use the stage menu on the card."
         actions={<div className="flex items-center gap-5 text-right">
+          <Modal trigger={<><Plus aria-hidden />Add opportunity</>} title="Add opportunity" description="Pick an existing contact and the stage it starts in.">
+            <form action={createOpportunity} className="flex flex-col gap-3">
+              <div><label className="label" htmlFor="opp-contact">Contact</label>
+                <select id="opp-contact" name="contact_id" required className="select">{(contacts ?? []).map((c) => <option key={c.id} value={c.id}>{[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email}</option>)}</select></div>
+              <div><label className="label" htmlFor="opp-title">Title</label><input id="opp-title" name="title" placeholder="e.g. Website redesign" className="input" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="label" htmlFor="opp-value">Value (£)</label><input id="opp-value" name="value" type="number" step="0.01" min="0" defaultValue="0" className="input" /></div>
+                <div><label className="label" htmlFor="opp-stage">Stage</label><select id="opp-stage" name="stage_id" className="select">{(stages ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              </div>
+              <button className="btn btn-primary self-start">Add opportunity</button>
+            </form>
+          </Modal>
           <div><div className="eyebrow">Opportunities</div><div className="tabular text-lg font-semibold leading-tight text-ink">{(opps ?? []).length}</div></div>
           <div className="h-8 w-px bg-line" aria-hidden />
           <div><div className="eyebrow">Total value</div><div className="tabular text-lg font-semibold leading-tight text-ink">{gbp.format(grand)}</div></div>
@@ -52,8 +67,7 @@ export default async function Pipeline() {
                       <div className="mt-2 flex items-center gap-2 text-xs text-muted"><Avatar name={personName(c)} size="sm" /><span className="truncate">{[c?.first_name, c?.last_name].filter(Boolean).join(" ") || c?.email}</span></div>
                       <form action={moveOpportunity} className="mt-2.5 flex gap-1.5 border-t border-line pt-2.5">
                         <input type="hidden" name="id" value={o.id} />
-                        <select name="stage_id" defaultValue={st.id} aria-label="Move to stage" className="select input-sm flex-1">{(stages ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                        <button className="btn btn-secondary btn-sm">Move<ArrowRight aria-hidden /></button>
+                        <StageSelect stages={(stages ?? []).map((x) => ({ id: x.id, name: x.name }))} value={st.id} />
                       </form>
                     </div>
                   );
