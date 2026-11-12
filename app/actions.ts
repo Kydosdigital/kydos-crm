@@ -530,7 +530,7 @@ export async function rejectDraft(fd: FormData) {
   revalidatePath("/agent");
 }
 export async function setAgentMode(fd: FormData) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   await (await supabaseServer()).from("workspaces").update({ agent_mode: String(fd.get("mode")) }).eq("id", ws.id);
   revalidatePath("/agent");
 }
@@ -546,7 +546,7 @@ export async function askAgentToDraft(fd: FormData) {
 
 // ───────── Custom fields, smart lists, bookings ─────────
 export async function saveField(fd: FormData) {
-  const { ws } = await requireWorkspace();
+  const { ws } = await requireAdmin();
   const label = s(fd, "label");
   if (!label) return;
   const key = (s(fd, "key") ?? label).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -555,7 +555,7 @@ export async function saveField(fd: FormData) {
   revalidatePath("/lists");
 }
 export async function deleteField(fd: FormData) {
-  await requireWorkspace();
+  await requireAdmin();
   await (await supabaseServer()).from("custom_fields").delete().eq("id", String(fd.get("id")));
   revalidatePath("/lists");
 }
@@ -634,12 +634,12 @@ export async function saveForm(fd: FormData) {
   revalidatePath("/forms");
 }
 export async function toggleForm(fd: FormData) {
-  await requireWorkspace();
+  await requireAdmin();
   await (await supabaseServer()).from("hosted_forms").update({ active: fd.get("active") === "1" }).eq("id", String(fd.get("id")));
   revalidatePath("/forms");
 }
 export async function deleteForm(fd: FormData) {
-  await requireWorkspace();
+  await requireAdmin();
   await (await supabaseServer()).from("hosted_forms").delete().eq("id", String(fd.get("id")));
   revalidatePath("/forms");
 }

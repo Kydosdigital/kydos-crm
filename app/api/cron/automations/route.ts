@@ -9,7 +9,8 @@ import { dailyDigestIfDue } from "@/lib/digest";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return new Response("Unauthorized", { status: 401 });
   }
   const processed = await processDueRuns();
