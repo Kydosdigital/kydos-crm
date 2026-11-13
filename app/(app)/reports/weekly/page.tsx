@@ -13,13 +13,32 @@ export default async function WeeklyClientSummary() {
   const end = new Date();
   const start = new Date(end.getTime() - periodDays * 864e5).toISOString();
   const until = end.toISOString();
+  // Grouped totals must include all published posts, not just the first 500.
+  // Stable ordering prevents skipping rows when several posts share a date.
+  async function loadPublishedPosts() {
+    const rows: Array<{ client: string; platform: string; scheduled_at: string }> = [];
+    const batch = 1000;
+    for (let startRow = 0; startRow < 50000; startRow += batch) {
+      const { data, error } = await db.from("content_posts")
+        .select("client,platform,scheduled_at")
+        .eq("workspace_id", ws.id).eq("status", "published")
+        .gte("scheduled_at", start).lt("scheduled_at", until)
+        .order("scheduled_at").order("id")
+        .range(startRow, startRow + batch - 1);
+      if (error) return { data: null, error };
+      rows.push(...(data ?? []));
+      if ((data?.length ?? 0) < batch) return { data: rows, error: null };
+    }
+    // Fail explicitly instead of reporting a sampled result as a full total.
+    return { data: null, error: { message: "Published post list exceeds safe reporting limit" } };
+  }
   const [leads, sent, replies, bookings, won, posts, approvals, completedTasks] = await Promise.all([
     db.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).gte("created_at", start).lt("created_at", until),
     db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").neq("status", "queued").gte("created_at", start).lt("created_at", until),
     db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("direction", "in").gte("created_at", start).lt("created_at", until),
     db.from("bookings").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).neq("status", "cancelled").gte("created_at", start).lt("created_at", until),
     db.from("opportunities").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("status", "won").gte("closed_at", start).lt("closed_at", until),
-    db.from("content_posts").select("client,platform,scheduled_at").eq("workspace_id", ws.id).eq("status", "published").gte("scheduled_at", start).lt("scheduled_at", until).order("scheduled_at").limit(500),
+    loadPublishedPosts(),
     db.from("content_posts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("status", "awaiting_approval"),
     db.from("tasks").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("done", true),
   ]);
@@ -41,7 +60,7 @@ export default async function WeeklyClientSummary() {
     `Inbound replies: ${value(replies)}`,
     `Active bookings created: ${value(bookings)}`,
     `Deals closed as won: ${value(won)}`,
-    `Posts marked Published and scheduled this week: ${posts.error ? "Unavailable" : String(posts.data?.length ?? 0)}${(posts.data?.length ?? 0) >= 500 ? " (partial)" : ""}`,
+    `Posts marked Published and scheduled this week: ${posts.error ? "Unavailable" : String(posts.data?.length ?? 0)}`,
     ...clients.map(([client, count]) => `  ${client}: ${count} published post${count === 1 ? "" : "s"}`),
     `Posts awaiting approval (current backlog): ${value(approvals)}`,
     `Tasks marked done (all time, completion date not stored): ${value(completedTasks)}`,
@@ -54,7 +73,6 @@ export default async function WeeklyClientSummary() {
         description={`Rolling seven days ending ${fmt(end)}. Figures are scoped to ${ws.name}.`}
         actions={<CopyButton text={textReport} label="Copy summary" />} />
       {hasError && <Alert tone="danger">Some report queries failed. Unavailable figures must not be treated as zero.</Alert>}
-      {(posts.data?.length ?? 0) >= 500 && <Alert tone="warning">Post details reached the 500-row display limit. The published-post breakdown may be incomplete.</Alert>}
       <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3">
         <Stat label="New leads" value={value(leads)} icon={UserPlus} />
         <Stat label="Outgoing message records" value={value(sent)} icon={Mail} />
