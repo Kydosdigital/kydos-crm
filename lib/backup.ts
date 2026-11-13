@@ -1,15 +1,58 @@
 import { supabaseAdmin } from "./supabase/admin";
 
-const TABLES = ["contacts", "opportunities", "pipelines", "stages", "notes", "tasks", "messages", "automations", "automation_steps", "bookings", "custom_fields", "smart_lists", "hosted_forms", "email_templates", "knowledge_items", "snippets"];
+/**
+ * Workspace data catalogue. Auth credentials are intentionally excluded:
+ * mail_connections stores encrypted OAuth refresh tokens, which must be
+ * re-authorised when restoring an environment.
+ */
+const TABLES = [
+  "activity_log", "agent_drafts", "automation_runs", "automation_steps",
+  "automations", "bookings", "calendar_shares", "call_logs", "contacts",
+  "content_posts", "custom_fields", "email_templates", "hosted_forms",
+  "invoices", "knowledge_items", "message_events", "messages", "notes",
+  "opportunities", "pipelines", "proposals", "retainers", "scheduled_sends",
+  "smart_lists", "snippets", "stages", "tasks", "tracking_numbers",
+  "workspace_members",
+] as const;
 
-/** Builds a full JSON export for one workspace (used by the nightly backup and the manual download). */
+const PAGE_SIZE = 1000;
+
+async function readTable(wsId: string, table: (typeof TABLES)[number]) {
+  const db = supabaseAdmin();
+  // Order by a unique key to keep pages stable and prevent duplicates or skips.
+  const orderKey = table === "calendar_shares" ? "token" : table === "workspace_members" ? "user_id" : "id";
+  const rows: Record<string, unknown>[] = [];
+  for (let start = 0; ; start += PAGE_SIZE) {
+    const { data, error } = await db.from(table).select("*")
+      .eq("workspace_id", wsId).order(orderKey)
+      .range(start, start + PAGE_SIZE - 1);
+    if (error) throw new Error(`Backup export failed reading ${table}: ${error.message}`);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+/**
+ * Export an entire workspace, including settings and operational tables.
+ * A failed table read rejects the export rather than silently writing an
+ * incomplete archive. Storage objects and external provider credentials
+ * are not included and must be restored or reconnected separately.
+ */
 export async function exportWorkspace(wsId: string) {
   const db = supabaseAdmin();
-  const out: Record<string, unknown> = { exported_at: new Date().toISOString() };
-  for (const t of TABLES) {
-    const { data } = await db.from(t).select("*").eq("workspace_id", wsId).limit(50000);
-    out[t] = data ?? [];
-  }
+  const { data: workspace, error } = await db.from("workspaces")
+    .select("*").eq("id", wsId).single();
+  if (error || !workspace) throw new Error("Backup export failed to read workspace settings");
+
+  const out: Record<string, unknown> = {
+    format_version: 2,
+    exported_at: new Date().toISOString(),
+    workspace,
+    excluded_tables: ["mail_connections"],
+  };
+  for (const table of TABLES) out[table] = await readTable(wsId, table);
   return out;
 }
 
