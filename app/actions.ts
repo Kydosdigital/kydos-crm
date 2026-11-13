@@ -607,8 +607,11 @@ export async function enrolList(fd: FormData) {
   const { data: l } = await db.from("smart_lists").select("*").eq("id", String(fd.get("list_id"))).eq("workspace_id", ws.id).single();
   const autoId = String(fd.get("automation_id"));
   if (!l || !autoId) return;
-  const people = await matchList(ws.id, l.filter);
   const admin = supabaseAdmin();
+  // The admin client bypasses RLS, so confirm the automation belongs to this workspace before enrolling anyone.
+  const { data: auto } = await admin.from("automations").select("id").eq("id", autoId).eq("workspace_id", ws.id).maybeSingle();
+  if (!auto) return;
+  const people = await matchList(ws.id, l.filter);
   let n = 0;
   for (const c of people.slice(0, 500)) {
     const { data: active } = await admin.from("automation_runs").select("id").eq("automation_id", autoId).eq("contact_id", c.id).eq("status", "active").maybeSingle();
