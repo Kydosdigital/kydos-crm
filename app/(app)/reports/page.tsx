@@ -66,7 +66,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const sources = [...src.entries()].sort((a, b) => b[1].leads - a[1].leads);
   const maxLeads = Math.max(1, ...sources.map(([, v]) => v.leads));
 
-  // Revenue by source (won deals closed and invoices paid in the period, credited to the contact's first-touch source)
+  // Won sales and cash collected are distinct measures. The same sale may generate both a won deal and a paid invoice.
   const label = (c: { source: string | null; utm_source: string | null; utm_medium: string | null; fbclid: string | null; gclid: string | null }) =>
     c.utm_source ? `${c.utm_source}${c.utm_medium ? " / " + c.utm_medium : ""}` : c.fbclid ? "facebook / paid" : c.gclid ? "google / paid" : c.source ?? "unknown";
   const byId = new Map((allContacts ?? []).map((c) => [c.id, label(c)]));
@@ -74,8 +74,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const bump = (cid: string) => { const k = byId.get(cid) ?? "unknown"; const r = rev.get(k) ?? { deals: 0, won: 0, paid: 0 }; rev.set(k, r); return r; };
   for (const o of opps ?? []) if (o.status === "won" && (o.closed_at ?? o.created_at) >= since) { const r = bump(o.contact_id); r.deals++; r.won += Number(o.value); }
   for (const i of paidInv ?? []) bump(i.contact_id).paid += Number(i.amount_gbp);
-  const revenue = [...rev.entries()].map(([k, v]) => ({ k, ...v, total: v.won + v.paid })).filter((r) => r.total > 0).sort((a, b) => b.total - a.total);
-  const maxRev = Math.max(1, ...revenue.map((r) => r.total));
+  const revenue = [...rev.entries()].map(([k, v]) => ({ k, ...v })).filter((r) => r.won > 0 || r.paid > 0).sort((a, b) => b.paid - a.paid || b.won - a.won);
+  const maxRev = Math.max(1, ...revenue.map((r) => r.paid));
 
   const reasons = new Map<string, number>();
   for (const o of opps ?? []) if (o.status === "lost" && (o.closed_at ?? o.created_at) >= since) { const k = (o.lost_reason ?? "").trim() || "No reason recorded"; reasons.set(k, (reasons.get(k) ?? 0) + 1); }
@@ -163,11 +163,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       </TableCard>
 
       <TableCard className="mb-6">
-        <div className="px-5 pb-1 pt-4"><CardTitle icon={PoundSterling}>Revenue by source</CardTitle></div>
-        <table className="table"><thead><tr><th>Source</th><th className="w-2/5">Revenue</th><th>Won deals</th><th className="num">Paid invoices</th></tr></thead><tbody>
-          {revenue.map((r) => <tr key={r.k}><td className="font-medium text-ink">{r.k}</td><td><div className="flex items-center gap-3"><Bar v={r.total} max={maxRev} /><span className="tabular w-20 shrink-0 text-right font-medium text-ink">{gbp(r.total)}</span></div></td><td className="tabular">{r.deals} <span className="text-muted">({gbp(r.won)})</span></td><td className="num">{gbp(r.paid)}</td></tr>)}
-          {!revenue.length && <tr><td colSpan={4} className="!py-8 text-center text-muted">No won deals or paid invoices in this period. Add UTM tags to your ad links to see which campaign earned what.</td></tr>}
+        <div className="px-5 pb-1 pt-4"><CardTitle icon={PoundSterling}>Payments received by source</CardTitle></div>
+        <table className="table"><thead><tr><th>Source</th><th className="w-2/5">Paid cash</th><th>Won deals</th><th className="num">Paid invoices</th></tr></thead><tbody>
+          {revenue.map((r) => <tr key={r.k}><td className="font-medium text-ink">{r.k}</td><td><div className="flex items-center gap-3"><Bar v={r.paid} max={maxRev} /><span className="tabular w-20 shrink-0 text-right font-medium text-ink">{gbp(r.paid)}</span></div></td><td className="tabular">{r.deals} <span className="text-muted">({gbp(r.won)})</span></td><td className="num">{gbp(r.paid)}</td></tr>)}
+          {!revenue.length && <tr><td colSpan={4} className="!py-8 text-center text-muted">No won deals or paid invoices in this period. Source is attributed to the contact's first known touch.</td></tr>}
         </tbody></table>
+        <p className="px-5 pb-4 text-xs text-muted">Paid cash counts invoices marked paid during this period. Won deal value is shown separately for sales performance and is not added to cash received.</p>
       </TableCard>
 
       <div className="grid items-start gap-6 md:grid-cols-2">
