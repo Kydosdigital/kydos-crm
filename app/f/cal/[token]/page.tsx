@@ -14,9 +14,9 @@ const STATUS: Record<string, string> = { draft: "Draft", awaiting_approval: "Awa
  */
 function MediaPreview({ url }: { url: string | null }) {
   const src = url?.trim() ?? "";
-  if (!src || !(src.startsWith("https://") || /^\\/(?!\\/)/.test(src))) return null;
-  const image = /\\.(png|jpe?g|gif|webp|avif)(?:[?#]|$)/i.test(src);
-  const video = /\\.(mp4|webm|ogg)(?:[?#]|$)/i.test(src);
+  if (!src || !(src.startsWith("https://") || /^\/(?!\/)/.test(src))) return null;
+  const image = /\.(png|jpe?g|gif|webp|avif)(?:[?#]|$)/i.test(src);
+  const video = /\.(mp4|webm|ogg)(?:[?#]|$)/i.test(src);
   return (
     <div className="mt-4 flex flex-col items-start gap-2">
       {image && (
