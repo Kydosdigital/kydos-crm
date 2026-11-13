@@ -5,6 +5,9 @@ import { notifyOwner } from "@/lib/notify";
 import { sendMetaEvent } from "@/lib/capi";
 import { logActivity } from "@/lib/log";
 
+// A 'processing' claim older than this is treated as abandoned (the earlier attempt was killed) and may be taken over (KD-163).
+const STALE_CLAIM_MS = 10 * 60 * 1000;
+
 // Stripe > Developers > Webhooks > <app>/api/webhooks/stripe, events checkout.session.completed, invoice.paid, invoice.payment_failed, customer.subscription.deleted. Secret = STRIPE_WEBHOOK_SECRET.
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -17,9 +20,18 @@ export async function POST(req: Request) {
   if (claimErr) {
     if (claimErr.code !== "23505") return new Response("Could not record event", { status: 500 });
     const { data: prior } = await db.from("stripe_events").select("status").eq("event_id", eventId).maybeSingle();
-    // Already finished: acknowledge the repeat. Still processing (an earlier attempt crashed or is running): ask Stripe to retry later.
+    // Already finished: acknowledge the repeat.
     if (prior?.status === "processed") return new Response("ok");
-    return new Response("Event still processing", { status: 500 });
+    // Still processing: if the claim is stale (an earlier attempt was killed mid-run), take it over atomically. Otherwise ask Stripe to retry later.
+    const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
+    const { data: reclaimed } = await db
+      .from("stripe_events")
+      .update({ status: "processing", received_at: new Date().toISOString() })
+      .eq("event_id", eventId)
+      .eq("status", "processing")
+      .lt("received_at", staleBefore)
+      .select("event_id");
+    if (!reclaimed || reclaimed.length === 0) return new Response("Event still processing", { status: 500 });
   }
   try {
     const res = await handleEvent(db, ev);
@@ -33,6 +45,8 @@ export async function POST(req: Request) {
   }
 }
 
+// The Stripe payload is untyped JSON, as in the original handler.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any): Promise<Response> {
   const o = ev.data?.object ?? {};
   // Retainers (monthly card subscriptions)
