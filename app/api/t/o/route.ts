@@ -1,12 +1,15 @@
 import { fireTrigger } from "@/lib/automation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { verifyOpen } from "@/lib/tracking";
 
 const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
 
 // Open pixel. Apple Mail Privacy Protection and some gateways pre-fetch it, so opens are indicative only; clicks and replies are the real signals.
 export async function GET(req: Request) {
-  const m = new URL(req.url).searchParams.get("m") ?? "";
-  if (/^[0-9a-f-]{36}$/.test(m)) {
+  const q = new URL(req.url).searchParams;
+  const m = q.get("m") ?? "", s = q.get("s") ?? "";
+  // Unsigned or forged pixel requests are ignored, so opens cannot be faked for a known message ID.
+  if (/^[0-9a-f-]{36}$/.test(m) && verifyOpen(m, s)) {
     try {
       const db = supabaseAdmin();
       const { data: msg } = await db.from("messages").select("workspace_id,contact_id,created_at").eq("id", m).maybeSingle();
