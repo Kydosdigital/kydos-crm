@@ -22,7 +22,8 @@ const schema = z.object({
   company: opt(200),
   consent: z.boolean().optional(),         // tick-box on your form; stored as consent evidence
   custom: z.record(z.string().max(100), z.string().max(2000)).refine((c) => Object.keys(c).length <= 50, "Too many fields").optional(), // extra fields from hosted forms
-  page: opt(500),
+  // Referrers can be long; keep the first 500 characters rather than rejecting the lead.
+  page: z.preprocess((v) => (typeof v === "string" ? blankToUndefined(v.slice(0, 500)) : v), z.string().optional()),
   attribution: z.record(z.string().max(100), z.string().max(500)).optional(), // utm_*, fbclid, gclid, landing_url
   [HONEYPOT_FIELD]: z.unknown().optional(),
 });
