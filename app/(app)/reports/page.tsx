@@ -1,10 +1,10 @@
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { londonDateKey, londonMonthKey, londonWeekStart, londonWindowEnd, londonWindowStart, londonDayKeys } from "@/lib/reporting-dates";
 import { PoundSterling, CalendarCheck, Clock, Trophy, UserPlus, UserX } from "lucide-react";
 import { Badge, Card, CardTitle, Meter, Page, PageHeader, Segmented, Stat, TableCard } from "@/components/ui";
 
-const ago = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
 const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
 const mins = (m: number | null) => (m === null ? "n/a" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} days`);
@@ -12,15 +12,17 @@ const Bar = ({ v, max }: { v: number; max: number }) => <Meter value={v} max={ma
 
 export default async function Reports({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const { ws } = await requireWorkspace();
-  const days = Math.min(365, Math.max(7, Number((await searchParams).days) || 30));
+  const days = Math.floor(Math.min(365, Math.max(7, Number((await searchParams).days) || 30)));
   const db = await supabaseServer();
-  const since = ago(days);
+  const since = londonWindowStart(days);
+  const before = londonWindowStart(days * 2);
+  const until = londonWindowEnd();
   const [{ data: contactsBoth }, { data: opps }, { data: stages }, { data: bookings }, { data: firstOut }, { data: allContacts }, { data: paidInv }] = await Promise.all([
-    db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", ago(days * 2)).limit(20000),
+    db.from("contacts").select("id,source,tags,created_at").eq("workspace_id", ws.id).gte("created_at", before).lt("created_at", until).limit(20000),
     db.from("opportunities").select("id,value,status,stage_id,created_at,closed_at,contact_id,lost_reason").eq("workspace_id", ws.id).limit(10000),
     db.from("stages").select("id,name,position").eq("workspace_id", ws.id).order("position"),
-    db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("created_at", ago(90)).limit(10000),
-    db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", ago(days * 2)).order("created_at").limit(40000),
+    db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("start_time", londonWindowStart(Math.max(days, 56))).lt("start_time", until).limit(10000),
+    db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", before).lt("created_at", until).order("created_at").limit(40000),
     db.from("contacts").select("id,source,utm_source,utm_medium,fbclid,gclid").eq("workspace_id", ws.id).limit(20000),
     db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).limit(10000),
   ]);
@@ -72,13 +74,13 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const byId = new Map((allContacts ?? []).map((c) => [c.id, label(c)]));
   const rev = new Map<string, { deals: number; won: number; paid: number }>();
   const bump = (cid: string) => { const k = byId.get(cid) ?? "unknown"; const r = rev.get(k) ?? { deals: 0, won: 0, paid: 0 }; rev.set(k, r); return r; };
-  for (const o of opps ?? []) if (o.status === "won" && (o.closed_at ?? o.created_at) >= since) { const r = bump(o.contact_id); r.deals++; r.won += Number(o.value); }
+  for (const o of opps ?? []) if (o.status === "won" && o.closed_at && o.closed_at >= since && o.closed_at < until) { const r = bump(o.contact_id); r.deals++; r.won += Number(o.value); }
   for (const i of paidInv ?? []) bump(i.contact_id).paid += Number(i.amount_gbp);
   const revenue = [...rev.entries()].map(([k, v]) => ({ k, ...v, total: v.won + v.paid })).filter((r) => r.total > 0).sort((a, b) => b.total - a.total);
   const maxRev = Math.max(1, ...revenue.map((r) => r.total));
 
   const reasons = new Map<string, number>();
-  for (const o of opps ?? []) if (o.status === "lost" && (o.closed_at ?? o.created_at) >= since) { const k = (o.lost_reason ?? "").trim() || "No reason recorded"; reasons.set(k, (reasons.get(k) ?? 0) + 1); }
+  for (const o of opps ?? []) if (o.status === "lost" && o.closed_at && o.closed_at >= since && o.closed_at < until) { const k = (o.lost_reason ?? "").trim() || "No reason recorded"; reasons.set(k, (reasons.get(k) ?? 0) + 1); }
   const lostRows = [...reasons.entries()].sort((a, b) => b[1] - a[1]);
   const maxLost = Math.max(1, ...lostRows.map(([, n]) => n));
 
@@ -98,8 +100,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     return <span className={good ? "text-success-ink" : "text-danger-ink"}>{pct > 0 ? "▲" : "▼"} {Math.abs(pct)}% <span className="text-muted">vs previous {days} days</span></span>;
   };
   const perDay = new Map<string, number>();
-  for (const c of contacts) { const k = c.created_at.slice(0, 10); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
-  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
+  for (const c of contacts) { const k = londonDateKey(c.created_at); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
+  const series = londonDayKeys(days).map((date) => perDay.get(date) ?? 0);
   const maxDay = Math.max(1, ...series);
   const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * 600},${70 - (v / maxDay) * 60}`).join(" ");
 
@@ -107,16 +109,16 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   const open = (opps ?? []).filter((o) => o.status === "open");
   const stageRows = (stages ?? []).map((s) => ({ name: s.name, n: open.filter((o) => o.stage_id === s.id).length, v: open.filter((o) => o.stage_id === s.id).reduce((t, o) => t + Number(o.value), 0) }));
   const maxStage = Math.max(1, ...stageRows.map((s) => s.v));
-  const won = (opps ?? []).filter((o) => o.status === "won"), lost = (opps ?? []).filter((o) => o.status === "lost");
+  const won = (opps ?? []).filter((o) => o.status === "won" && o.closed_at && o.closed_at >= since && o.closed_at < until), lost = (opps ?? []).filter((o) => o.status === "lost" && o.closed_at && o.closed_at >= since && o.closed_at < until);
   const winRate = won.length + lost.length ? Math.round((won.length / (won.length + lost.length)) * 100) : null;
   const monthly = new Map<string, number>();
-  for (const o of won) { const k = (o.closed_at ?? o.created_at).slice(0, 7); monthly.set(k, (monthly.get(k) ?? 0) + Number(o.value)); }
+  for (const o of won) { const k = londonMonthKey(o.closed_at!); monthly.set(k, (monthly.get(k) ?? 0) + Number(o.value)); }
   const months = [...monthly.entries()].sort().slice(-6);
   const maxMonth = Math.max(1, ...months.map(([, v]) => v));
 
   // Bookings per week + show rate
   const weeks = new Map<string, number>();
-  for (const b of bookings ?? []) { const d = new Date(b.created_at); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); const k = d.toISOString().slice(5, 10); weeks.set(k, (weeks.get(k) ?? 0) + 1); }
+  for (const b of bookings ?? []) { const k = londonWeekStart(b.start_time); weeks.set(k, (weeks.get(k) ?? 0) + 1); }
   const wk = [...weeks.entries()].sort().slice(-8);
   const maxWk = Math.max(1, ...wk.map(([, v]) => v));
   const att = (bookings ?? []).filter((b) => b.status === "attended").length, ns = (bookings ?? []).filter((b) => b.status === "no_show").length;
@@ -127,7 +129,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     <Page>
       <PageHeader
         title="Reports"
-        description={<>{ws.name}. Leads and replies for the last {days} days. See Analytics for email and WhatsApp engagement.</>}
+        description={<>{ws.name}. London calendar days, including today, from {londonDateKey(since)} to {londonDateKey(new Date())}. Won deals use closure date, paid invoices use payment date, bookings use appointment date. See Analytics for messaging engagement.</>}
         actions={<Segmented label="Date range" items={[30, 90, 365].map((d) => ({ href: `/reports?days=${d}`, label: `${d}d`, active: d === days }))} />}
       />
 
