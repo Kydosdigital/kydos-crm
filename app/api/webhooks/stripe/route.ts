@@ -17,6 +17,16 @@ export async function POST(req: Request) {
     if (claimErr.code === "23505") return new Response("ok");
     return new Response("Could not record event", { status: 500 });
   }
+  try {
+    return await handleEvent(db, ev);
+  } catch (err) {
+    // Release the claim so Stripe's retry runs the event again instead of being acknowledged as a duplicate (KD-163).
+    await db.from("stripe_events").delete().eq("event_id", String(ev.id));
+    throw err;
+  }
+}
+
+async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any): Promise<Response> {
   const o = ev.data?.object ?? {};
   // Retainers (monthly card subscriptions)
   if (ev.type === "checkout.session.completed" && String(o.client_reference_id ?? "").startsWith("ret:")) {
