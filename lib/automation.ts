@@ -85,7 +85,12 @@ export async function processDueRuns(limit = 50) {
       await advance(run);
     } catch (e) {
       await db.from("automation_runs").update({ status: "failed", last_error: String(e) }).eq("id", run.id);
-      await notifyOwner(run.workspace_id, "Automation run failed", `Run ${run.id} failed: ${String(e)}`);
+      // A notification failure must not stop later due runs in this batch.
+      try {
+        await notifyOwner(run.workspace_id, "Automation run failed", `Run ${run.id} failed: ${String(e)}`);
+      } catch (notifyErr) {
+        console.error("Owner notification failed for run", run.id, notifyErr);
+      }
     }
     processed++;
   }
