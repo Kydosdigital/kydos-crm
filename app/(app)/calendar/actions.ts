@@ -50,3 +50,32 @@ export async function updatePlannedPost(fd: FormData) {
   if (error || !updated) fail("Could not update this post. Try again");
   revalidatePath("/calendar");
 }
+
+/** Reuse an existing post as a new draft, leaving its approval state untouched. */
+export async function duplicatePlannedPost(fd: FormData) {
+  const { ws } = await requireStaff();
+  const id = String(fd.get("id") ?? "").trim();
+  if (!id) return fail("Choose a post to duplicate");
+  const db = await supabaseServer();
+  const { data: original, error: readError } = await db.from("content_posts")
+    .select("client,platform,caption,media_url,scheduled_at")
+    .eq("id", id).eq("workspace_id", ws.id).maybeSingle();
+  if (readError || !original) return fail("Post not found in this workspace");
+  // An extra week makes the copy easy to distinguish in the calendar.
+  // It remains a draft and must go through the normal approval process.
+  const nextDate = new Date(original.scheduled_at);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 7);
+  const { error: insertError } = await db.from("content_posts").insert({
+    workspace_id: ws.id,
+    client: original.client,
+    platform: original.platform,
+    caption: original.caption,
+    media_url: original.media_url,
+    scheduled_at: nextDate.toISOString(),
+    status: "draft",
+    client_comment: null,
+  });
+  if (insertError) return fail("Could not duplicate the post");
+  revalidatePath("/calendar");
+  redirect("/calendar?done=" + encodeURIComponent("Draft copy created. Review its date and caption before requesting approval."));
+}
