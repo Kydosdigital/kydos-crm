@@ -34,7 +34,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   const { data: ws } = await db.from("workspaces").select("id").eq("slug", f.workspace).maybeSingle();
   if (!ws) return Response.json({ error: "Unknown workspace" }, { status: 404, headers: cors });
 
-  const { data: hf } = await db.from("hosted_forms").select("id,tags,submissions").eq("workspace_id", ws.id).eq("slug", slug).maybeSingle();
+  // Only a live (active) hosted form may accept submissions. Unknown or paused slugs are rejected
+  // before any contact is written or any automation trigger fires.
+  const { data: hf } = await db.from("hosted_forms").select("id,tags,submissions").eq("workspace_id", ws.id).eq("slug", slug).eq("active", true).maybeSingle();
+  if (!hf) return Response.json({ error: "Form not found or inactive" }, { status: 404, headers: cors });
   const phone = toE164(f.phone);
   let q = db.from("contacts").select("id").eq("workspace_id", ws.id);
   q = f.email ? q.ilike("email", f.email) : q.eq("phone", phone!);
