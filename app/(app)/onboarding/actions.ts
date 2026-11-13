@@ -36,7 +36,8 @@ export async function updateOnboardingStep(fd: FormData) {
   const db = await supabaseServer();
   const { data: current, error: readError } = await db.from("tasks")
     .select("title,done").eq("workspace_id", ws.id).eq("id", id).maybeSingle();
-  if (readError || !current || !onboardingTitles.has(current.title)) go("Onboarding task not found", "error");
+  if (readError || !current) return go("Onboarding task not found", "error");
+  if (!onboardingTitles.has(current.title)) return go("Onboarding task not found", "error");
 
   const { data, error } = await db.from("tasks").update({ done: !current.done })
     .eq("workspace_id", ws.id).eq("id", id).eq("done", current.done)
