@@ -1,8 +1,8 @@
 import { ClipboardCheck, Circle, CheckCircle2, Plus } from "lucide-react";
 import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { ONBOARDING_STEPS } from "@/lib/onboarding-checklist";
-import { initialiseOnboarding, updateOnboardingStep } from "./actions";
+import { ONBOARDING_STEPS, SERVICE_ONBOARDING_TEMPLATES, allOnboardingTitles } from "@/lib/onboarding-checklist";
+import { initialiseOnboarding, initialiseServiceOnboarding, updateOnboardingStep } from "./actions";
 import { Alert, Badge, Card, Page, PageHeader } from "@/components/ui";
 
 export default async function Onboarding({
@@ -16,11 +16,11 @@ export default async function Onboarding({
   const { data: tasks, error: queryError } = await db.from("tasks")
     .select("id,title,done,assigned_to")
     .eq("workspace_id", ws.id)
-    .in("title", ONBOARDING_STEPS.map((s) => s.title))
+    .in("title", allOnboardingTitles)
     .order("created_at", { ascending: true });
   const byTitle = new Map((tasks ?? []).map((task) => [task.title, task]));
   const completed = ONBOARDING_STEPS.filter((step) => byTitle.get(step.title)?.done).length;
-  const started = (tasks ?? []).length > 0;
+  const started = ONBOARDING_STEPS.some((step) => byTitle.has(step.title));
 
   return (
     <Page>
@@ -76,6 +76,50 @@ export default async function Onboarding({
           <a href="/tasks" className="link mt-4 inline-block text-[13px]">Open tasks</a>
         </aside>
       </div>
+      <section className="mt-8">
+        <h2 className="mb-2 text-base font-semibold text-ink">Reusable service checklists</h2>
+        <p className="mb-4 text-[13px] text-muted">Choose the services you deliver. Each template adds its own tasks, and existing progress is preserved. Use the standard checklist above for every client.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          {(Object.keys(SERVICE_ONBOARDING_TEMPLATES) as Array<keyof typeof SERVICE_ONBOARDING_TEMPLATES>).map((key) => {
+            const template = SERVICE_ONBOARDING_TEMPLATES[key];
+            const missing = template.steps.filter((step) => !byTitle.has(step.title));
+            const doneCount = template.steps.filter((step) => byTitle.get(step.title)?.done).length;
+            return (
+              <Card key={key}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-ink">{template.label}</h3>
+                  <Badge tone={doneCount === template.steps.length ? "success" : "outline"}>{doneCount}/{template.steps.length} done</Badge>
+                </div>
+                <div className="space-y-3">
+                  {template.steps.map((step) => {
+                    const task = byTitle.get(step.title);
+                    return (
+                      <div key={step.key} className="border-b border-line pb-3 last:border-0 last:pb-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-ink">{step.title}</p>
+                            <p className="mt-0.5 text-xs leading-relaxed text-muted">{step.description}</p>
+                          </div>
+                          {task && <form action={updateOnboardingStep}>
+                            <input type="hidden" name="id" value={task.id} />
+                            <button className="btn btn-secondary btn-sm">{task.done ? "Reopen" : "Complete"}</button>
+                          </form>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {missing.length > 0 && !queryError && (
+                  <form action={initialiseServiceOnboarding} className="mt-4 border-t border-line pt-3">
+                    <input type="hidden" name="service" value={key} />
+                    <button className="btn btn-secondary btn-sm">{missing.length === template.steps.length ? "Add service checklist" : "Add missing steps"}</button>
+                  </form>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </section>
     </Page>
   );
 }

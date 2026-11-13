@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
-import { ONBOARDING_STEPS, onboardingTitles } from "@/lib/onboarding-checklist";
+import { ONBOARDING_STEPS, SERVICE_ONBOARDING_TEMPLATES, onboardingTitles } from "@/lib/onboarding-checklist";
 
 const go = (message: string, type: "error" | "done"): never =>
   redirect(`/onboarding?${type}=${encodeURIComponent(message)}`);
@@ -27,6 +27,28 @@ export async function initialiseOnboarding() {
   revalidatePath("/onboarding");
   revalidatePath("/tasks");
   go(`Added ${missing.length} onboarding steps`, "done");
+}
+
+/** Add only the service-specific tasks requested, preserving existing progress. */
+export async function initialiseServiceOnboarding(fd: FormData) {
+  const { ws } = await requireStaff();
+  const choice = String(fd.get("service") ?? "");
+  if (!(choice in SERVICE_ONBOARDING_TEMPLATES)) return go("Choose a supported service", "error");
+  const template = SERVICE_ONBOARDING_TEMPLATES[choice as keyof typeof SERVICE_ONBOARDING_TEMPLATES];
+  const db = await supabaseServer();
+  const { data, error } = await db.from("tasks").select("title")
+    .eq("workspace_id", ws.id).in("title", template.steps.map((step) => step.title));
+  if (error) return go("Could not read service onboarding progress", "error");
+  const present = new Set((data ?? []).map((task) => task.title));
+  const missing = template.steps.filter((step) => !present.has(step.title));
+  if (!missing.length) return go("This service checklist is already in place", "done");
+  const { error: insertError } = await db.from("tasks").insert(
+    missing.map((step) => ({ workspace_id: ws.id, title: step.title, contact_id: null, done: false })),
+  );
+  if (insertError) return go("Could not create the service checklist", "error");
+  revalidatePath("/onboarding");
+  revalidatePath("/tasks");
+  go("Added " + missing.length + " " + template.label + " onboarding steps", "done");
 }
 
 /** Only toggle a recognised onboarding task in the current workspace. */
