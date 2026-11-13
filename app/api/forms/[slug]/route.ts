@@ -51,9 +51,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (f[HONEYPOT_FIELD] !== undefined && String(f[HONEYPOT_FIELD]).trim() !== "") {
     return Response.json({ ok: true }, { headers: cors });
   }
-  if (!f.email && !f.phone) return Response.json({ error: "Email or phone required" }, { status: 400, headers: cors });
+  // A bad phone alongside a valid email is dropped rather than losing the lead.
   const phone = toE164(f.phone);
-  if (f.phone && !phone) return Response.json({ error: "Invalid phone number" }, { status: 400, headers: cors });
+  if (!f.email && !phone) return Response.json({ error: "Email or valid phone required" }, { status: 400, headers: cors });
 
   const db = supabaseAdmin();
   const { data: ws } = await db.from("workspaces").select("id").eq("slug", f.workspace).maybeSingle();
