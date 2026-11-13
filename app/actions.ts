@@ -150,6 +150,7 @@ export async function addTask(fd: FormData) {
 }
 
 export async function toggleTask(fd: FormData) {
+  await requireStaff();
   const db = await supabaseServer();
   await db.from("tasks").update({ done: fd.get("done") === "true" }).eq("id", String(fd.get("id")));
   revalidatePath(`/contacts/${String(fd.get("contact_id"))}`);
@@ -413,6 +414,7 @@ export async function saveTemplate(fd: FormData) {
   revalidatePath("/templates");
 }
 export async function deleteTemplate(fd: FormData) {
+  await requireStaff();
   const db = await supabaseServer();
   await db.from("email_templates").delete().eq("id", String(fd.get("id")));
   revalidatePath("/templates");
