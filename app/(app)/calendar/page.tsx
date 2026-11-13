@@ -1,6 +1,7 @@
 import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { createShare, deletePost, deleteShare, savePost, setPostStatus } from "../../actions";
+import { updatePlannedPost } from "./actions";
 import { CalendarDays, ExternalLink, Link2, MessageSquareQuote, Plus } from "lucide-react";
 import { Alert, Badge, Card, CardTitle, EmptyState, Field, Page, PageHeader, Section, Segmented, humanise, statusTone } from "@/components/ui";
 import Link from "next/link";
@@ -8,6 +9,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { CopyButton } from "@/components/ui/copy-button";
 
 const STATUS: Record<string, string> = { draft: "Draft", awaiting_approval: "Awaiting client", approved: "Approved", changes_requested: "Changes requested", published: "Published" };
+function localDateTime(iso: string) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+}
 
 export default async function Calendar({ searchParams }: { searchParams: Promise<{ error?: string; view?: string; m?: string }> }) {
   const { error, view, m } = await searchParams;
@@ -91,6 +100,25 @@ export default async function Calendar({ searchParams }: { searchParams: Promise
                         <p className="min-w-0 whitespace-pre-wrap leading-relaxed text-ink-2">{p.caption}</p>
                       </div>
                       {p.client_comment && <p className="alert alert-warning mt-3 !py-2 !text-xs"><MessageSquareQuote aria-hidden /><span>Client: {p.client_comment}</span></p>}
+                      {p.status !== "published" && (
+                        <details className="disclosure mt-3 border-t border-line pt-3">
+                          <summary className="cursor-pointer text-xs font-semibold text-brand-text">Edit planned post</summary>
+                          <form action={updatePlannedPost} className="mt-3 grid gap-3">
+                            <input type="hidden" name="id" value={p.id} />
+                            <div className="grid grid-cols-2 gap-3">
+                              <Field label="Platform"><select name="platform" defaultValue={p.platform} className="select">
+                                {["facebook", "instagram", "linkedin", "tiktok", "x", "google business"].map((platform) => <option key={platform} value={platform}>{humanise(platform)}</option>)}
+                              </select></Field>
+                              <Field label="Scheduled for"><input type="datetime-local" name="scheduled_at" required defaultValue={localDateTime(p.scheduled_at)} className="input" /></Field>
+                            </div>
+                            <Field label="Caption"><textarea name="caption" required rows={4} defaultValue={p.caption} className="textarea" /></Field>
+                            <Field label="Media link"><input type="url" name="media_url" defaultValue={p.media_url ?? ""} placeholder="https://..." className="input" /></Field>
+                            <label className="check-row"><input type="checkbox" name="for_approval" defaultChecked={p.status === "awaiting_approval" || p.status === "changes_requested"} className="checkbox" />Request client approval after saving</label>
+                            <p className="text-xs text-muted">Editing a post resets its previous approval. Leave unchecked to save as a draft.</p>
+                            <button className="btn btn-secondary btn-sm justify-self-start">Save changes</button>
+                          </form>
+                        </details>
+                      )}
                     </div>
                   ))}
                 </div>
