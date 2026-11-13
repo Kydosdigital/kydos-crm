@@ -71,14 +71,23 @@ async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any, eventI
     if (findErr) throw findErr;
     if (!r) return new Response("ok");
     if (ev.type === "invoice.paid") {
-      // Critical: the increment happens only if this event has not already counted, so a replay after a later failure cannot double count (KD-163).
+      // Critical: count this event at most once. The ledger row is the guard, so a replay of an older event cannot count again
+      // even after a newer event has moved retainers.last_stripe_event_id on (KD-163).
+      const { error: ledgerErr } = await db.from("retainer_paid_events").insert({ retainer_id: r.id, event_id: eventId });
+      if (ledgerErr && ledgerErr.code !== "23505") throw ledgerErr;
+      const alreadyCounted = ledgerErr?.code === "23505";
+      if (alreadyCounted) return new Response("ok");
       const { data: counted, error: payErr } = await db
         .from("retainers")
         .update({ status: "active", last_paid_at: new Date().toISOString(), paid_count: (r.paid_count ?? 0) + 1, last_stripe_event_id: eventId })
         .eq("id", r.id)
-        .or(`last_stripe_event_id.is.null,last_stripe_event_id.neq.${eventId}`)
         .select("id");
-      if (payErr) throw payErr;
+      if (payErr || !counted || counted.length === 0) {
+        // Undo the ledger row so Stripe's retry can count this event.
+        await db.from("retainer_paid_events").delete().eq("retainer_id", r.id).eq("event_id", eventId);
+        if (payErr) throw payErr;
+        throw new Error("retainer not updated for paid event");
+      }
       if (counted && counted.length > 0) {
         // Non-critical effects, only on the first successful count.
         await safely("retainer paid note", async () => {
