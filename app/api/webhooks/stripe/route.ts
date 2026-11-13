@@ -11,6 +11,12 @@ export async function POST(req: Request) {
   if (!verifyStripe(raw, req.headers.get("stripe-signature"))) return new Response("Invalid signature", { status: 403 });
   const ev = JSON.parse(raw);
   const db = supabaseAdmin();
+  // Stripe redelivers events; claim the event id first so a repeat is acknowledged without re-running side effects (KD-163).
+  const { error: claimErr } = await db.from("stripe_events").insert({ event_id: String(ev.id), type: String(ev.type) });
+  if (claimErr) {
+    if (claimErr.code === "23505") return new Response("ok");
+    return new Response("Could not record event", { status: 500 });
+  }
   const o = ev.data?.object ?? {};
   // Retainers (monthly card subscriptions)
   if (ev.type === "checkout.session.completed" && String(o.client_reference_id ?? "").startsWith("ret:")) {
