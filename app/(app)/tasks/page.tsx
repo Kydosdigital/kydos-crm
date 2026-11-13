@@ -3,13 +3,16 @@ import { requireWorkspace } from "@/lib/workspace";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { assignTask, toggleTaskBoard } from "../../actions";
-import { CalendarDays, Circle, User } from "lucide-react";
-import { Page, PageHeader } from "@/components/ui";
+import { createBoardTask } from "./actions";
+import { CalendarDays, Circle, Plus, User } from "lucide-react";
+import { Alert, Field, Page, PageHeader } from "@/components/ui";
+import { Modal } from "@/components/ui/modal";
 
 const clock = () => Date.now();
 const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short" });
 
-export default async function Tasks() {
+export default async function Tasks({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   const { ws } = await requireWorkspace();
   const db = await supabaseServer();
   const [{ data: tasks }, { data: members }] = await Promise.all([
@@ -28,7 +31,20 @@ export default async function Tasks() {
   const TONE: Record<string, string> = { Overdue: "bg-danger", Today: "bg-brand-text", "This week": "bg-info-ink", "Later or no date": "bg-faint" };
   return (
     <Page width="full">
-      <PageHeader title="Tasks" description="Open tasks across every contact, grouped by when they are due. Tick a task to complete it." />
+      <PageHeader title="Tasks" description="Tasks from contacts and standalone work, grouped by due date."
+        actions={<Modal trigger={<><Plus aria-hidden />Add task</>} title="New task">
+          <form action={createBoardTask} className="grid gap-3">
+            <Field label="Task title"><input name="title" required maxLength={240} placeholder="What needs doing?" className="input" /></Field>
+            <Field label="Due date and time (London)"><input name="due_at" type="datetime-local" className="input" /></Field>
+            <Field label="Assign to"><select name="assigned_to" className="select">
+              <option value="">Unassigned</option>
+              {(members ?? []).map((m) => <option key={m.user_id} value={m.user_id}>{who(m.user_id)}</option>)}
+            </select></Field>
+            <button className="btn btn-primary justify-self-start">Create task</button>
+          </form>
+        </Modal>}
+      />
+      {error && <Alert tone="danger">{error}</Alert>}
       <div className="grid grid-cols-4 items-start gap-4">
         {cols.map(([title, list]) => (
           <div key={title} className="rounded-[14px] border border-line bg-subtle/60 p-2">
