@@ -56,6 +56,7 @@ export const NAV: NavGroup[] = [
     label: "Insights",
     items: [
       { href: "/reports", label: "Reports", icon: BarChart3, keywords: "leads sources win rate" },
+      { href: "/reports/weekly", label: "Weekly summary", icon: FileText, keywords: "client reporting leads bookings content" },
       { href: "/analytics", label: "Analytics", icon: LineChart, keywords: "engagement opens clicks" },
       { href: "/activity", label: "Activity and calls", icon: Activity, keywords: "audit log backup" },
       { href: "/usage", label: "Usage", icon: Gauge, keywords: "costs billing" },
