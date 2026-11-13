@@ -26,7 +26,7 @@ export default function FormClient({ slug, workspace, form, embed }: { slug: str
     e.preventDefault();
     setState("sending");
     const fd = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = { workspace, consent: fd.get("consent") === "on", custom: {}, page: document.referrer || undefined, attribution: attribution(), website_url: String(fd.get("website_url") ?? "") };
+    const body: Record<string, unknown> = { workspace, consent: fd.get("consent") === "on", custom: {}, page: document.referrer || undefined, attribution: attribution(), kd_hp_contact: String(fd.get("kd_hp_contact") ?? "") };
     for (const f of form.fields) {
       const v = String(fd.get(f.key) ?? "").trim();
       if (!v) continue;
@@ -59,7 +59,7 @@ export default function FormClient({ slug, workspace, form, embed }: { slug: str
       ))}
       {/* Honeypot: hidden from people and assistive tech; bots that fill it are ignored by the API. */}
       <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
-        <label>Website<input type="text" name="website_url" tabIndex={-1} autoComplete="off" /></label>
+        <label>Website<input type="text" name="kd_hp_contact" tabIndex={-1} autoComplete="off" /></label>
       </div>
       <label className="check-row !text-xs !leading-relaxed text-muted"><input type="checkbox" name="consent" required className="checkbox" />{form.consent}</label>
       {state === "error" && <p role="alert" className="alert alert-danger">{err}</p>}

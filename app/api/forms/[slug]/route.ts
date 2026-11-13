@@ -11,7 +11,7 @@ const blankToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === 
 const opt = (max: number) => z.preprocess(blankToUndefined, z.string().max(max).optional());
 
 const MAX_BODY_BYTES = 16 * 1024;
-const HONEYPOT_FIELD = "website_url"; // hidden from humans; bots tend to fill it in
+const HONEYPOT_FIELD = "kd_hp_contact"; // hidden from humans; bots tend to fill it in
 
 const schema = z.object({
   workspace: z.string().min(1).max(100),   // workspace slug
