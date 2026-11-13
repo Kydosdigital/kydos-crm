@@ -49,18 +49,17 @@ export async function POST(req: Request) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any, eventId: string): Promise<Response> {
   const o = ev.data?.object ?? {};
-  // Retainers (monthly card subscriptions)
+  // Retainers (monthly card subscriptions). Unchanged behaviour: any failure retries the event.
   if (ev.type === "checkout.session.completed" && String(o.client_reference_id ?? "").startsWith("ret:")) {
     const rid = String(o.client_reference_id).slice(4);
     const { data: r, error } = await db.from("retainers").update({ status: "active", stripe_customer_id: o.customer, stripe_subscription_id: o.subscription, started_at: new Date().toISOString() }).eq("id", rid).select("*").maybeSingle();
     if (error) throw error;
     if (r) {
-      // Critical part is the status update above. Side effects below are non-critical: logged on failure, not retried (KD-163).
-      await safely("retainer tag", () => tagContact(db, r.workspace_id, r.contact_id, "retainer-client"));
-      await safely("retainer trigger", () => fireTrigger(r.workspace_id, r.contact_id, { type: "tag_added", tag: "retainer-client" }));
-      await safely("retainer meta event", () => sendMetaEvent(r.workspace_id, r.contact_id, "Purchase", Number(r.amount_gbp)));
-      await safely("retainer owner notice", () => notifyOwner(r.workspace_id, "New retainer started", `£${r.amount_gbp}/month: ${r.description}`));
-      await safely("retainer activity", () => logActivity(r.workspace_id, "stripe", "retainer started", "retainer", r.id, `£${r.amount_gbp}/month`));
+      await tagContact(db, r.workspace_id, r.contact_id, "retainer-client");
+      await fireTrigger(r.workspace_id, r.contact_id, { type: "tag_added", tag: "retainer-client" });
+      await sendMetaEvent(r.workspace_id, r.contact_id, "Purchase", Number(r.amount_gbp));
+      await notifyOwner(r.workspace_id, "New retainer started", `£${r.amount_gbp}/month: ${r.description}`);
+      await logActivity(r.workspace_id, "stripe", "retainer started", "retainer", r.id, `£${r.amount_gbp}/month`);
     }
     return new Response("ok");
   }
@@ -71,25 +70,15 @@ async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any, eventI
     if (findErr) throw findErr;
     if (!r) return new Response("ok");
     if (ev.type === "invoice.paid") {
-      // Critical: count this event at most once. The ledger row is the guard, so a replay of an older event cannot count again
-      // even after a newer event has moved retainers.last_stripe_event_id on (KD-163).
-      const { error: ledgerErr } = await db.from("retainer_paid_events").insert({ retainer_id: r.id, event_id: eventId });
-      if (ledgerErr && ledgerErr.code !== "23505") throw ledgerErr;
-      const alreadyCounted = ledgerErr?.code === "23505";
-      if (alreadyCounted) return new Response("ok");
-      const { data: counted, error: payErr } = await db
-        .from("retainers")
-        .update({ status: "active", last_paid_at: new Date().toISOString(), paid_count: (r.paid_count ?? 0) + 1, last_stripe_event_id: eventId })
-        .eq("id", r.id)
-        .select("id");
-      if (payErr || !counted || counted.length === 0) {
-        // Undo the ledger row so Stripe's retry can count this event.
-        await db.from("retainer_paid_events").delete().eq("retainer_id", r.id).eq("event_id", eventId);
-        if (payErr) throw payErr;
-        throw new Error("retainer not updated for paid event");
-      }
-      if (counted && counted.length > 0) {
-        // Non-critical effects, only on the first successful count.
+      // Critical: one transaction in the database counts this event at most once (migration 0033, KD-163).
+      const { data: counted, error: payErr } = await db.rpc("retainer_mark_paid", {
+        p_retainer_id: r.id,
+        p_event_id: eventId,
+        p_paid_at: new Date().toISOString(),
+      });
+      if (payErr) throw payErr;
+      if (counted === true) {
+        // Non-critical effects, only after the first count. Failures are logged and not replayed (KD-163).
         await safely("retainer paid note", async () => {
           const { error } = await db.from("notes").insert({ workspace_id: r.workspace_id, contact_id: r.contact_id, body: `Retainer payment received: £${r.amount_gbp}` });
           if (error) throw error;
@@ -100,45 +89,35 @@ async function handleEvent(db: ReturnType<typeof supabaseAdmin>, ev: any, eventI
     } else if (ev.type === "invoice.payment_failed") {
       const { error } = await db.from("retainers").update({ status: "past_due" }).eq("id", r.id);
       if (error) throw error;
-      await safely("retainer failed tag", () => tagContact(db, r.workspace_id, r.contact_id, "payment-failed"));
-      await safely("retainer failed trigger", () => fireTrigger(r.workspace_id, r.contact_id, { type: "tag_added", tag: "payment-failed" }));
-      await safely("retainer failed notice", () => notifyOwner(r.workspace_id, "Retainer payment failed", `£${r.amount_gbp}/month: ${r.description}. Stripe will retry automatically.`));
+      await tagContact(db, r.workspace_id, r.contact_id, "payment-failed");
+      await fireTrigger(r.workspace_id, r.contact_id, { type: "tag_added", tag: "payment-failed" });
+      await notifyOwner(r.workspace_id, "Retainer payment failed", `£${r.amount_gbp}/month: ${r.description}. Stripe will retry automatically.`);
     } else {
       const { error } = await db.from("retainers").update({ status: "cancelled" }).eq("id", r.id);
       if (error) throw error;
-      await safely("retainer cancelled activity", () => logActivity(r.workspace_id, "stripe", "retainer cancelled", "retainer", r.id));
+      await logActivity(r.workspace_id, "stripe", "retainer cancelled", "retainer", r.id);
     }
     return new Response("ok");
   }
   if (ev.type !== "checkout.session.completed") return new Response("ok");
   const id = o.client_reference_id as string | undefined;
   if (!id) return new Response("ok");
-  // Critical: flipping the invoice to paid. A repeat finds no row (already paid), so it is a no-op.
+  // Invoice payment. Unchanged behaviour: any failure retries the event.
   const { data: inv, error: invErr } = await db.from("invoices").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", id).neq("status", "paid").select("*").maybeSingle();
   if (invErr) throw invErr;
   if (!inv) return new Response("ok");
-  // Non-critical effects after the paid status is committed (logged on failure, not retried).
-  await safely("invoice paid tag", async () => {
-    const { data: c, error } = await db.from("contacts").select("tags").eq("id", inv.contact_id).single();
-    if (error) throw error;
-    if (!(c?.tags ?? []).includes("paid")) {
-      const { error: upErr } = await db.from("contacts").update({ tags: [...(c?.tags ?? []), "paid"] }).eq("id", inv.contact_id);
-      if (upErr) throw upErr;
-    }
-  });
-  await safely("invoice paid note", async () => {
-    const { error } = await db.from("notes").insert({ workspace_id: inv.workspace_id, contact_id: inv.contact_id, body: `Invoice ${inv.number} paid: £${inv.amount_gbp}` });
-    if (error) throw error;
-  });
-  await safely("invoice tag trigger", () => fireTrigger(inv.workspace_id, inv.contact_id, { type: "tag_added", tag: "paid" }));
-  await safely("invoice paid trigger", () => fireTrigger(inv.workspace_id, inv.contact_id, { type: "invoice_paid" }));
-  await safely("invoice meta event", () => sendMetaEvent(inv.workspace_id, inv.contact_id, "Purchase", Number(inv.amount_gbp)));
-  await safely("invoice owner notice", () => notifyOwner(inv.workspace_id, `Invoice ${inv.number} paid`, `£${inv.amount_gbp} received for ${inv.description}.`));
-  await safely("invoice activity", () => logActivity(inv.workspace_id, "stripe", "invoice paid", "invoice", inv.id, `£${inv.amount_gbp}`));
+  const { data: c } = await db.from("contacts").select("tags").eq("id", inv.contact_id).single();
+  if (!(c?.tags ?? []).includes("paid")) await db.from("contacts").update({ tags: [...(c?.tags ?? []), "paid"] }).eq("id", inv.contact_id);
+  await db.from("notes").insert({ workspace_id: inv.workspace_id, contact_id: inv.contact_id, body: `Invoice ${inv.number} paid: £${inv.amount_gbp}` });
+  await fireTrigger(inv.workspace_id, inv.contact_id, { type: "tag_added", tag: "paid" });
+  await fireTrigger(inv.workspace_id, inv.contact_id, { type: "invoice_paid" });
+  await sendMetaEvent(inv.workspace_id, inv.contact_id, "Purchase", Number(inv.amount_gbp));
+  await notifyOwner(inv.workspace_id, `Invoice ${inv.number} paid`, `£${inv.amount_gbp} received for ${inv.description}.`);
+  await logActivity(inv.workspace_id, "stripe", "invoice paid", "invoice", inv.id, `£${inv.amount_gbp}`);
   return new Response("ok");
 }
 
-// Run a non-critical side effect. Failures are logged and do not replay the critical money path (KD-163).
+// Run a non-critical side effect for invoice.paid only. Failures are logged and do not replay the counted payment (KD-163).
 async function safely(label: string, fn: () => Promise<unknown>) {
   try {
     await fn();
@@ -149,8 +128,5 @@ async function safely(label: string, fn: () => Promise<unknown>) {
 
 async function tagContact(db: ReturnType<typeof supabaseAdmin>, ws: string, contactId: string, tag: string) {
   const { data: c } = await db.from("contacts").select("tags").eq("id", contactId).eq("workspace_id", ws).single();
-  if (c && !(c.tags ?? []).includes(tag)) {
-    const { error } = await db.from("contacts").update({ tags: [...(c.tags ?? []), tag] }).eq("id", contactId);
-    if (error) throw error;
-  }
+  if (c && !(c.tags ?? []).includes(tag)) await db.from("contacts").update({ tags: [...(c.tags ?? []), tag] }).eq("id", contactId);
 }
