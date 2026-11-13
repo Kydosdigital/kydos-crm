@@ -24,14 +24,18 @@ This note covers how a release is reverted if it causes a problem in production.
 
 ## Stopping sends during an incident
 
-If a campaign, automation or message batch is sending the wrong content or to the wrong people, stop it first and investigate second:
+Known gap: in the current code, pausing an automation does not stop runs that are already in progress. `toggleAutomation` (`app/actions.ts`) only sets `automations.active`, and `processDueRuns` (`lib/automation.ts`) advances every `automation_runs` row with status `active`, without checking that flag. Pausing therefore stops new enrolments only. There is no in-app action that cancels existing runs. Until this is fixed, treat containment as an owner decision and do not assume a pause has stopped sends.
 
-1. Pause the affected campaign or automation in the app. Pausing stops new sends only. It does not cancel messages already queued in the app or accepted by a provider.
-2. Check the app's queue for any jobs still pending for that campaign or automation, and cancel them if the app allows it.
-3. Check the provider side (Resend for email, Twilio for SMS and WhatsApp, Meta for WhatsApp templates) for messages accepted but not yet delivered, and cancel any that the provider still allows to be cancelled. Where a provider cannot cancel, record the count and escalate.
+If a campaign, automation or message batch is sending the wrong content or to the wrong people:
+
+1. Pause the affected automation or campaign in the app to stop new enrolments. Record the time.
+2. Stop the affected runs. Stephen decides how, because it changes production data. The options are an owner-approved change to run status in the database, or a code fix that makes the run processor respect the pause. Neither is for the operator to improvise.
+3. Check the provider side (Resend for email, Twilio for SMS and WhatsApp, Meta for WhatsApp templates) for messages accepted but not yet delivered, and cancel any that the provider still allows to be cancelled. Where a provider cannot cancel, record the count.
 4. Escalation: if sends continue after steps 1 to 3, Stephen is the escalation owner. Contact the provider's support and treat the incident as live until the send count stops rising.
 5. Check the delivery log to see which recipients were reached and which were not.
 6. Record the stop time and the affected recipients in the tracker before any retry. Never retry a batch without checking which recipients already succeeded.
+
+A follow-up task should be raised to make the run processor respect the automation pause, or to add an owner-only stop-run action, before this procedure is treated as accepted.
 
 ## Permissions and rehearsal
 
