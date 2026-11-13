@@ -6,17 +6,25 @@ import { sendMetaEvent } from "@/lib/capi";
 import { logActivity } from "@/lib/log";
 
 
+// Blank strings from HTML forms count as "not provided".
+const blankToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+const opt = (max: number) => z.preprocess(blankToUndefined, z.string().max(max).optional());
+
+const MAX_BODY_BYTES = 16 * 1024;
+const HONEYPOT_FIELD = "website_url"; // hidden from humans; bots tend to fill it in
+
 const schema = z.object({
-  workspace: z.string().min(1),            // workspace slug
-  first_name: z.string().optional(),
-  last_name: z.string().optional(),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  company: z.string().optional(),
+  workspace: z.string().min(1).max(100),   // workspace slug
+  first_name: opt(120),
+  last_name: opt(120),
+  email: z.preprocess(blankToUndefined, z.string().trim().max(254).email().optional()),
+  phone: opt(40),
+  company: opt(200),
   consent: z.boolean().optional(),         // tick-box on your form; stored as consent evidence
-  custom: z.record(z.string(), z.string()).optional(), // extra fields from hosted forms
-  page: z.string().optional(),
-  attribution: z.record(z.string(), z.string()).optional(), // utm_*, fbclid, gclid, landing_url
+  custom: z.record(z.string().max(100), z.string().max(2000)).refine((c) => Object.keys(c).length <= 50, "Too many fields").optional(), // extra fields from hosted forms
+  page: opt(500),
+  attribution: z.record(z.string().max(100), z.string().max(500)).optional(), // utm_*, fbclid, gclid, landing_url
+  [HONEYPOT_FIELD]: z.unknown().optional(),
 });
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type" };
@@ -25,19 +33,35 @@ export const OPTIONS = () => new Response(null, { headers: cors });
 // POST JSON from any website form: /api/forms/contact-us  { workspace: "kydos", email: "...", ... }
 export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params;
-  const parsed = schema.safeParse(await req.json().catch(() => ({})));
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_BYTES) return Response.json({ error: "Payload too large" }, { status: 413, headers: cors });
+  const raw = await req.text().catch(() => "");
+  if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) return Response.json({ error: "Payload too large" }, { status: 413, headers: cors });
+  let body: unknown = {};
+  try {
+    body = raw ? JSON.parse(raw) : {};
+  } catch {
+    return Response.json({ error: "Invalid payload" }, { status: 400, headers: cors });
+  }
+  const parsed = schema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid payload" }, { status: 400, headers: cors });
   const f = parsed.data;
+  // Honeypot: a filled hidden field means a bot. Pretend success, store nothing.
+  if (f[HONEYPOT_FIELD] !== undefined && String(f[HONEYPOT_FIELD]).trim() !== "") {
+    return Response.json({ ok: true }, { headers: cors });
+  }
   if (!f.email && !f.phone) return Response.json({ error: "Email or phone required" }, { status: 400, headers: cors });
+  const phone = toE164(f.phone);
+  if (f.phone && !phone) return Response.json({ error: "Invalid phone number" }, { status: 400, headers: cors });
 
   const db = supabaseAdmin();
   const { data: ws } = await db.from("workspaces").select("id").eq("slug", f.workspace).maybeSingle();
   if (!ws) return Response.json({ error: "Unknown workspace" }, { status: 404, headers: cors });
 
   const { data: hf } = await db.from("hosted_forms").select("id,tags,submissions").eq("workspace_id", ws.id).eq("slug", slug).maybeSingle();
-  const phone = toE164(f.phone);
   let q = db.from("contacts").select("id").eq("workspace_id", ws.id);
-  q = f.email ? q.ilike("email", f.email) : q.eq("phone", phone!);
+  // Escape LIKE wildcards so an email such as "%@" cannot match other contacts.
+  q = f.email ? q.ilike("email", f.email.replace(/[\\%_]/g, (c) => `\\${c}`)) : q.eq("phone", phone!);
   const { data: existing } = await q.maybeSingle();
 
   const at = f.attribution ?? {};
