@@ -24,7 +24,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     db.from("bookings").select("id,contact_id,status,start_time,created_at").eq("workspace_id", ws.id).gte("start_time", londonWindowStart(Math.max(days, 56))).lt("start_time", until).limit(10000),
     db.from("messages").select("contact_id,created_at").eq("workspace_id", ws.id).eq("direction", "out").neq("status", "failed").gte("created_at", before).lt("created_at", until).order("created_at").limit(40000),
     db.from("contacts").select("id,source,utm_source,utm_medium,fbclid,gclid").eq("workspace_id", ws.id).limit(20000),
-    db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).limit(10000),
+    db.from("invoices").select("contact_id,amount_gbp").eq("workspace_id", ws.id).eq("kind", "invoice").eq("status", "paid").gte("paid_at", since).lt("paid_at", until).limit(10000),
   ]);
 
   // Per-person performance: contacts owned, open tasks, and deals on the contacts they own.
