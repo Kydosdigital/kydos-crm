@@ -1,5 +1,5 @@
 import {
-  Activity, BarChart3, BookOpen, Bot, CalendarDays, CheckSquare, FileSignature, FileText, FormInput, Gauge, Inbox, KanbanSquare,
+  Activity, ClipboardCheck, BarChart3, BookOpen, Bot, CalendarDays, CheckSquare, FileSignature, FileText, FormInput, Gauge, Inbox, KanbanSquare,
   LineChart, ListFilter, Megaphone, Plug, Receipt, Repeat, Settings, TextQuote, Users, UsersRound, Workflow, LayoutTemplate, MessageCircle, PhoneCall,
   type LucideIcon,
 } from "lucide-react";
@@ -21,6 +21,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/contacts", label: "Contacts", icon: Users, keywords: "leads people clients" },
       { href: "/pipeline", label: "Pipeline", icon: KanbanSquare, keywords: "deals opportunities stages kanban" },
+      { href: "/onboarding", label: "Client onboarding", icon: ClipboardCheck, keywords: "new client agreement deposit brief access first delivery" },
       { href: "/lists", label: "Lists and fields", icon: ListFilter, keywords: "smart lists custom fields segments" },
     ],
   },
