@@ -11,17 +11,24 @@ export async function POST(req: Request) {
   if (!verifyStripe(raw, req.headers.get("stripe-signature"))) return new Response("Invalid signature", { status: 403 });
   const ev = JSON.parse(raw);
   const db = supabaseAdmin();
-  // Stripe redelivers events; claim the event id first so a repeat is acknowledged without re-running side effects (KD-163).
-  const { error: claimErr } = await db.from("stripe_events").insert({ event_id: String(ev.id), type: String(ev.type) });
+  // Stripe redelivers events. Claim the event id as 'processing' first; mark it 'processed' only after the handler succeeds (KD-163).
+  const eventId = String(ev.id);
+  const { error: claimErr } = await db.from("stripe_events").insert({ event_id: eventId, type: String(ev.type), status: "processing" });
   if (claimErr) {
-    if (claimErr.code === "23505") return new Response("ok");
-    return new Response("Could not record event", { status: 500 });
+    if (claimErr.code !== "23505") return new Response("Could not record event", { status: 500 });
+    const { data: prior } = await db.from("stripe_events").select("status").eq("event_id", eventId).maybeSingle();
+    // Already finished: acknowledge the repeat. Still processing (an earlier attempt crashed or is running): ask Stripe to retry later.
+    if (prior?.status === "processed") return new Response("ok");
+    return new Response("Event still processing", { status: 500 });
   }
   try {
-    return await handleEvent(db, ev);
+    const res = await handleEvent(db, ev);
+    const { error: doneErr } = await db.from("stripe_events").update({ status: "processed" }).eq("event_id", eventId);
+    if (doneErr) throw doneErr;
+    return res;
   } catch (err) {
     // Release the claim so Stripe's retry runs the event again instead of being acknowledged as a duplicate (KD-163).
-    await db.from("stripe_events").delete().eq("event_id", String(ev.id));
+    await db.from("stripe_events").delete().eq("event_id", eventId);
     throw err;
   }
 }
