@@ -102,6 +102,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   <input name="first_name" placeholder="First name" required>
   <input name="email" type="email" placeholder="Email" required>
   <input name="phone" placeholder="Phone">
+  <input name="website_url" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-10000px">
   <label><input type="checkbox" name="consent"> I agree to be contacted by email about my enquiry</label>
   <button>Send</button>
 </form>
@@ -111,7 +112,7 @@ document.getElementById("kydos-form").addEventListener("submit", async (e) => {
   const f = new FormData(e.target);
   await fetch("${url}/api/forms/contact-us", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on" })
+    body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on", website_url: f.get("website_url") })
   });
   e.target.innerHTML = "Thanks, we will be in touch.";
 });
