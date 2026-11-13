@@ -899,8 +899,11 @@ export async function bulkEnrol(fd: FormData) {
   const admin = supabaseAdmin();
   const { data: a } = await admin.from("automations").select("id").eq("id", autoId).eq("workspace_id", ws.id).maybeSingle();
   if (!a) redirect("/contacts?error=" + encodeURIComponent("Automation not found"));
+  // Only enrol contacts that belong to this workspace (the admin client bypasses RLS).
+  const { data: owned } = await admin.from("contacts").select("id").eq("workspace_id", ws.id).in("id", list);
+  const ownedIds = (owned ?? []).map((c) => c.id);
   let n = 0;
-  for (const cid of list) {
+  for (const cid of ownedIds) {
     const { data: active } = await admin.from("automation_runs").select("id").eq("automation_id", autoId).eq("contact_id", cid).eq("status", "active").maybeSingle();
     if (!active) { await admin.from("automation_runs").insert({ workspace_id: ws.id, automation_id: autoId, contact_id: cid }); n++; }
   }

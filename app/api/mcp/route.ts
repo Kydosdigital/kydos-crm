@@ -41,8 +41,11 @@ function buildServer() {
     inputSchema: { contact_id: z.string() },
   }, async ({ contact_id }) => {
     const ws = await workspace();
+    const cRes = await db.from("contacts").select("*").eq("id", contact_id).eq("workspace_id", ws.id).maybeSingle();
+    // Refuse related records unless the contact itself belongs to this workspace.
+    if (!cRes.data) return text({ contact: null, messages: [], notes: [], tasks: [], opportunities: [] });
     const [c, m, n, t, o] = await Promise.all([
-      db.from("contacts").select("*").eq("id", contact_id).eq("workspace_id", ws.id).maybeSingle(),
+      Promise.resolve(cRes),
       db.from("messages").select("channel,direction,subject,body,status,created_at").eq("contact_id", contact_id).order("created_at", { ascending: false }).limit(15),
       db.from("notes").select("body,created_at").eq("contact_id", contact_id).order("created_at", { ascending: false }).limit(10),
       db.from("tasks").select("id,title,due_at,done").eq("contact_id", contact_id),
