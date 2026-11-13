@@ -21,6 +21,12 @@ async function workspace() {
   return data!;
 }
 
+// The service-role client bypasses RLS, so every contact id from a tool call must be checked against the workspace.
+async function ownsContact(wsId: string, contactId: string) {
+  const { data } = await supabaseAdmin().from("contacts").select("id").eq("id", contactId).eq("workspace_id", wsId).maybeSingle();
+  return !!data;
+}
+
 function buildServer() {
   const db = supabaseAdmin();
   const server = new McpServer({ name: "kydos-crm", version: "1.0.0" });
@@ -71,7 +77,7 @@ function buildServer() {
     const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).single();
     if (!c) return text("Contact not found");
     if (!c.tags.includes(tag)) {
-      await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id);
+      await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id).eq("workspace_id", ws.id);
       await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
     }
     return text("Done");
@@ -79,12 +85,14 @@ function buildServer() {
 
   server.registerTool("add_note", { description: "Add a note to a contact.", inputSchema: { contact_id: z.string(), body: z.string() } }, async ({ contact_id, body }) => {
     const ws = await workspace();
+    if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
     await db.from("notes").insert({ workspace_id: ws.id, contact_id, body });
     return text("Saved");
   });
 
   server.registerTool("create_task", { description: "Create a task on a contact, optional ISO due date.", inputSchema: { contact_id: z.string(), title: z.string(), due_at: z.string().optional() } }, async ({ contact_id, title, due_at }) => {
     const ws = await workspace();
+    if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
     await db.from("tasks").insert({ workspace_id: ws.id, contact_id, title, due_at: due_at ? new Date(due_at).toISOString() : null });
     return text("Created");
   });
@@ -151,13 +159,20 @@ function buildServer() {
     const ws = await workspace();
     if (approve_id) return text(await sendDraft(ws, approve_id));
     if (reject_id) { await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id); return text("Rejected"); }
-    if (contact_id && channel && body) { await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" }); return text("Draft added to queue"); }
+    if (contact_id && channel && body) {
+      if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
+      await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" });
+      return text("Draft added to queue");
+    }
     return text((await db.from("agent_drafts").select("id,contact_id,channel,subject,body,state,hypothesis,source,status,created_at").eq("workspace_id", ws.id).eq("status", "pending").order("created_at", { ascending: false })).data ?? []);
   });
 
   server.registerTool("list_automations", { description: "List automations with run counts, and enrol a contact if enrol_contact_id is given.", inputSchema: { enrol_contact_id: z.string().optional(), automation_id: z.string().optional() } }, async ({ enrol_contact_id, automation_id }) => {
     const ws = await workspace();
     if (enrol_contact_id && automation_id) {
+      // Both the automation and the contact must belong to this workspace.
+      const { data: auto } = await db.from("automations").select("id").eq("id", automation_id).eq("workspace_id", ws.id).maybeSingle();
+      if (!auto || !(await ownsContact(ws.id, enrol_contact_id))) return text("Automation or contact not found");
       await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id, contact_id: enrol_contact_id });
       return text("Enrolled");
     }
