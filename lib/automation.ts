@@ -92,6 +92,18 @@ export async function processDueRuns(limit = 50) {
   return processed;
 }
 
+type SendResult = { ok: boolean; error?: string } | undefined;
+
+// A send that did not go out must not count as a completed step. Contacts who
+// opted out or have no address are skipped on purpose and move on; any other
+// failure (provider error, missing sender, unconfigured channel) throws so the
+// run stops at this step, is marked failed and the owner is notified.
+function requireDelivered(r: SendResult, channel: string) {
+  if (!r || r.ok) return;
+  if (r.error === "blocked" || /opted out|No phone number|No email address/.test(r.error ?? "")) return;
+  throw new Error(`${channel} send failed: ${r.error ?? "unknown error"}`);
+}
+
 type Run = { id: string; workspace_id: string; automation_id: string; contact_id: string; step_position: number; started_at: string; context: Record<string, unknown> | null; wait_started_at: string | null };
 
 const SSRF = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1)/i;
@@ -169,10 +181,13 @@ async function advance(run: Run) {
 
   switch (step.type) {
     case "send_email":
-      await sendEmail(ws, contact, render(String(cfg.subject ?? ""), contact), render(String(cfg.body ?? ""), contact));
+      {
+        const r = await sendEmail(ws, contact, render(String(cfg.subject ?? ""), contact), render(String(cfg.body ?? ""), contact));
+        requireDelivered(r, "email");
+      }
       break;
     case "send_sms":
-      await sendSms(ws, contact, render(String(cfg.body ?? ""), contact));
+      requireDelivered(await sendSms(ws, contact, render(String(cfg.body ?? ""), contact)), "SMS");
       break;
     case "add_tag":
       await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id);
@@ -190,7 +205,7 @@ async function advance(run: Run) {
       await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
       break;
     case "send_whatsapp":
-      await sendWhatsAppTemplate(ws, contact, String(cfg.template), ((cfg.vars as unknown as string[]) ?? []).map((v) => render(String(v), contact)), String(cfg.lang ?? "en_GB"));
+      requireDelivered(await sendWhatsAppTemplate(ws, contact, String(cfg.template), ((cfg.vars as unknown as string[]) ?? []).map((v) => render(String(v), contact)), String(cfg.lang ?? "en_GB")), "WhatsApp");
       break;
     case "notify":
       await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
