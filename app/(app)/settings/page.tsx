@@ -110,11 +110,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 document.getElementById("kydos-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  await fetch("${url}/api/forms/contact-us", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on", kd_hp_contact: f.get("kd_hp_contact") })
-  });
-  e.target.innerHTML = "Thanks, we will be in touch.";
+  let ok = false;
+  try {
+    const res = await fetch("${url}/api/forms/contact-us", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on", kd_hp_contact: f.get("kd_hp_contact") })
+    });
+    ok = res.ok;
+  } catch (err) { ok = false; }
+  if (ok) { e.target.innerHTML = "Thanks, we will be in touch."; return; }
+  let msg = e.target.querySelector("[data-kydos-error]");
+  if (!msg) { msg = document.createElement("p"); msg.setAttribute("data-kydos-error", ""); msg.setAttribute("role", "alert"); e.target.appendChild(msg); }
+  msg.textContent = "Sorry, your message did not send. Please try again or email us directly.";
 });
 </script>`} />
               </Section>
