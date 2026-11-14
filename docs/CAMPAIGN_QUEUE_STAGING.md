@@ -37,9 +37,14 @@ Migration `kd094_email_campaign_queue_0035` was applied to staging, **not produc
 | Claim token | Wrong token rejected, right token accepted, repeated completion rejected |
 | Stale delivery claim | Marked unknown, not automatically retried |
 | Claim bound | Maximum 20 recipients per request |
+| Repeated bounded processing of the full 250 | **249 fake provider acceptances, 1 intentionally unknown, 0 queued, 0 sending, exactly 250 attempts** |
+| Independent simultaneous claim requests for one queued recipient | Worker 1 claimed the row; Worker 2 returned no row |
+| Concurrent test cleanup | One-off batch, recipient and test contact all removed after simulated acknowledgement |
 | Cancelled batch | Further claims refused |
 | Database access | `anon` and `authenticated` have no table read or function execution; service role allowed |
 | Cleanup after test | 0 synthetic test contacts, 0 campaign batches and 0 campaign recipients persisted |
+
+A second, expanded rollback-only run also consumed all 250 eligible recipients through repeated maximum-20 claims, recording 249 synthetic successful acknowledgements and one intentionally unknown delivery. No recipient remained queued or sending. Two separate concurrent database calls for a single queued synthetic recipient returned one claim and one empty result; the disposable claim and contact were then deleted. These are database-level tests, not a real provider-dispatch test.
 
 The SQL assertion block raises an error if any expected result is wrong. The execution returned successfully; read-only post-run queries independently confirmed zero fixture leftovers. **No provider send was attempted.**
 
