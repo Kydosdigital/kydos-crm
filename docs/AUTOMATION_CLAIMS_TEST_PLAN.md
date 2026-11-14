@@ -40,3 +40,24 @@ Previously `processDueRuns()` fetched active, due rows using a normal `SELECT` a
 ## Release gate
 
 CI green, migration applied in staging, two-worker claim test, application-level overlapping cron test, paused workflow test, stale-claim test, tenant-scoping regression, independent QA, and product-owner release approval. Only then consider the production migration and matching code as one controlled change.
+
+## Staging database evidence, 14 November 2026
+
+The technical lead applied `kd107_atomic_automation_claims_0034` **only** to staging Supabase project `psnpdmwkevnxrdrjyiwk`. Production migration history was read-only and unchanged.
+
+Using a disposable `QA KD-107 Atomic Claim` automation with one `add_tag` step and a synthetic Alpha-workspace contact:
+
+| Test | Observed result |
+|---|---|
+| Function permissions | `anon` and `authenticated` cannot execute either claim/expiry function; `service_role` can |
+| Two independent simultaneous claim requests | Worker 1 received the run ID and token; Worker 2 received no row |
+| Reclaim while token held | 0 rows |
+| Invalid token tries to update claimed run | 0 rows updated |
+| Correct token completes step transition | Exactly one row updated; token cleared; position advanced |
+| Workflow paused before claim | 0 rows claimed |
+| Expired claim swept | Run marked `failed`; token cleared; manual-review error recorded; 0 rows automatically reclaimed |
+| Test cleanup | Test automation, step and run deleted; four original synthetic contacts remain |
+
+**Scope of evidence:** database-level concurrency and permission tests. Independent callers were sent in parallel, but this is not proof of application-level overlapping cron requests. No provider send, webhook, charge, user authentication or production migration was performed. UAT-025 therefore remains Not run.
+
+The application branch still requires independent QA, integration with PR #24 and PR #26, and an actual staging application test before production consideration.
