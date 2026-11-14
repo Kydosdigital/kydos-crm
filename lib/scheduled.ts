@@ -3,7 +3,10 @@ import { audience, deliver, type Channel } from "./campaign";
 import { fireTrigger } from "./automation";
 import { logActivity } from "./log";
 
-/** Sends any scheduled bulk emails that are now due (capped at 90 per send to stay inside the free Resend limit). */
+/** Send only scheduled campaigns whose ENTIRE eligible audience fits the legacy cap.
+ * Larger or unverifiable audiences are safety-cancelled without a partial send.
+ * Durable multi-batch delivery will replace this temporary guard.
+ */
 export async function processScheduledSends() {
   const db = supabaseAdmin();
   const { data: due } = await db.from("scheduled_sends").select("*").eq("status", "scheduled").lte("send_at", new Date().toISOString()).limit(3);
@@ -14,7 +17,21 @@ export async function processScheduledSends() {
     const { data: ws } = await db.from("workspaces").select("*").eq("id", s.workspace_id).single();
     if (!ws) continue;
     const ch = (s.channel ?? "email") as Channel;
-    const { people } = await audience(ws.id, { tag: s.tag, listId: s.list_id }, ch);
+    const { people, total: eligible, incomplete } = await audience(ws.id, { tag: s.tag, listId: s.list_id }, ch);
+    if (incomplete || eligible > people.length) {
+      // A schedule might have grown since it was created. Never silently send
+      // only the first 90/100 contacts and mark the whole campaign completed.
+      // The current status constraint has no "blocked" state, so cancel safely
+      // and record the actual reason in the activity log for staff review.
+      const { error: stopError } = await db.from("scheduled_sends")
+        .update({ status: "cancelled", sent_count: 0 })
+        .eq("id", s.id).eq("workspace_id", ws.id).eq("status", "sending");
+      if (stopError) throw new Error("Could not safely stop an oversized campaign: " + stopError.message);
+      await logActivity(ws.id, "scheduler", "scheduled campaign safety-cancelled", "broadcast", s.id,
+        incomplete ? "Audience completeness could not be verified; no messages sent" :
+        `${eligible} eligible recipients exceed single-send cap of ${people.length}; no messages sent`);
+      continue;
+    }
     let sent = 0;
     for (const c of people) if ((await deliver(ws, c, { channel: ch, subject: s.subject, body: s.body, wa_template: s.wa_template, wa_lang: s.wa_lang })).ok) sent++;
     await db.from("scheduled_sends").update({ status: "sent", sent_count: sent }).eq("id", s.id);
