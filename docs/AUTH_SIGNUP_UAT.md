@@ -24,6 +24,7 @@ Replace the old `/signup` request-access form with real Supabase email/password 
 - [ ] Supabase **staging** email confirmations and SMTP configuration verified, no real customer emails.
 - [ ] Staging test account receives confirmation email and can sign in with password.
 - [ ] Test wrong password, weak password, mismatched password, unknown user, unconfirmed user, duplicate user, scanner-prefetch and expired link.
+- [ ] Test password recovery for a verified but unassigned account. It must use only the platform-owned sender, never inherit a client's membership/role. Check rate limiting for repeated password reset requests and availability of the platform sender in each environment.
 - [ ] Test user with no membership sees onboarding; user invited as member/client accesses only its workspace; anonymous user sees only public pages; no privilege elevation, user_metadata is never a role.
 - [ ] Test team admin invites an already registered user into its current workspace. No automatic privileges from a matching email domain alone.
 - [ ] Run browser UAT with actual Supabase Auth identities; do not claim completion from GitHub build alone.
