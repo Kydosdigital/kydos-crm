@@ -27,7 +27,11 @@ export async function audience(wsId: string, a: { tag?: string | null; listId?: 
     }
     const { data: l, error: listError } = await db.from("smart_lists")
       .select("filter").eq("id", a.listId).eq("workspace_id", wsId).single();
-    if (listError || !l) return { total: 0, people: [] as Contact[], incomplete: true };
+    // Engagement-based smart lists currently use a 90-contact lookback in
+    // loadEngagement, so completeness cannot be guaranteed even under 5,000.
+    if (listError || !l || (l.filter as { state?: string } | null)?.state) {
+      return { total: 0, people: [] as Contact[], incomplete: true };
+    }
     people = await matchList(wsId, l.filter);
   } else if (a.tag) {
     const { data, count, error } = await db.from("contacts")
