@@ -7,19 +7,39 @@ export type Channel = "email" | "sms" | "whatsapp";
 export const CAP: Record<Channel, number> = { email: 90, sms: 100, whatsapp: 100 };
 type Contact = Awaited<ReturnType<typeof matchList>>[number];
 
-/** Contacts who can receive this channel (opt-outs and missing addresses excluded), capped per send. */
+/**
+ * Legacy single-send audience. The 90/100 limit still applies until the
+ * durable campaign queue is fully integrated. Do not silently truncate an
+ * audience, including smart lists that may exceed matchList's 5,000-row cap.
+ * Callers MUST refuse to send or schedule when incomplete is true or when
+ * total is larger than people.length.
+ */
 export async function audience(wsId: string, a: { tag?: string | null; listId?: string | null }, channel: Channel) {
   const db = supabaseAdmin();
   let people: Contact[] = [];
   if (a.listId) {
-    const { data: l } = await db.from("smart_lists").select("filter").eq("id", a.listId).eq("workspace_id", wsId).single();
-    people = l ? await matchList(wsId, l.filter) : [];
+    // matchList fetches at most 5,000 unfiltered workspace contacts. If that
+    // limit could be exceeded, there is no safe way to prove list completeness.
+    const { count, error: sizeError } = await db.from("contacts")
+      .select("id", { count: "exact", head: true }).eq("workspace_id", wsId);
+    if (sizeError || count === null || count > 5000) {
+      return { total: 0, people: [] as Contact[], incomplete: true };
+    }
+    const { data: l, error: listError } = await db.from("smart_lists")
+      .select("filter").eq("id", a.listId).eq("workspace_id", wsId).single();
+    if (listError || !l) return { total: 0, people: [] as Contact[], incomplete: true };
+    people = await matchList(wsId, l.filter);
   } else if (a.tag) {
-    const r = await db.from("contacts").select("*").eq("workspace_id", wsId).contains("tags", [a.tag]).limit(5000);
-    people = (r.data ?? []) as Contact[];
+    const { data, count, error } = await db.from("contacts")
+      .select("*", { count: "exact" }).eq("workspace_id", wsId)
+      .contains("tags", [a.tag]).limit(5000);
+    if (error || count === null || count > 5000) {
+      return { total: 0, people: [] as Contact[], incomplete: true };
+    }
+    people = (data ?? []) as Contact[];
   }
   const ok = people.filter((c) => (channel === "email" ? c.email && !c.email_opt_out : c.phone && !c.sms_opt_out));
-  return { total: ok.length, people: ok.slice(0, CAP[channel]) };
+  return { total: ok.length, people: ok.slice(0, CAP[channel]), incomplete: false };
 }
 
 export type Message = { channel: Channel; subject?: string | null; body?: string | null; wa_template?: string | null; wa_lang?: string | null };
