@@ -19,6 +19,19 @@ This is a **temporary protection**, not completion of KD-093. It intentionally r
 
 No production deployment or real send was performed as part of development.
 
+## Independent code-review remediation, 14 November 2026
+
+Review identified that the previous count guard could still accept a **partially fetched page** as complete. It also found that `matchList()` swallowed database errors, treating unreadable lists as legitimately empty. These would undermine the entire fail-closed objective.
+
+The current branch now:
+
+- Requires exact returned row count to equal the database's exact source count for tagged audiences, not merely a total under 5,000.
+- Uses `matchListVerified()` for the legacy smart-list sender. This strict path compares the exact **database-filtered** source count with the returned page length **before** in-memory filters, refuses query errors, and refuses engagement-state lists whose supporting data is capped at 90.
+- Retains the previous cap check and server-side preflight before any immediate provider call or schedule insertion.
+- Refuses incomplete scheduled jobs before dispatch and records a safety-cancellation reason.
+
+**Evidence classification:** source-level remediation, followed by CI and preview checks. An actual low PostgREST `max_rows` configuration, smart-list database-error injection and staged fake-provider application test have **not yet** been executed. The PR remains under independent review.
+
 ## Required acceptance
 
 - For 250 eligible email contacts, direct Send and Schedule requests must both refuse before any provider call or scheduled insert.
