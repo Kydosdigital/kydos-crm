@@ -388,6 +388,16 @@ export async function sendBroadcast(fd: FormData) {
   if ((!tag && !listId) || !body && channel !== "whatsapp" || (channel === "email" && !subject) || (channel === "whatsapp" && !template)) redirect(`${back}&error=Audience and the message fields are required`);
   if (fd.get("confirm") !== "on") redirect(`${back}&error=Tick the consent confirmation first`);
   const msg = { channel, subject, body, wa_template: template, wa_lang: s(fd, "wa_lang") || "en_GB" };
+  // Fail closed before creating a scheduled send or contacting any provider.
+  // The legacy sender cannot safely handle audiences beyond its per-run cap.
+  const { audience, deliver } = await import("@/lib/campaign");
+  const { people, total, incomplete } = await audience(ws.id, { tag, listId }, channel);
+  if (incomplete || total > people.length) {
+    const warning = incomplete
+      ? "Audience completeness could not be verified. No campaign was sent or scheduled."
+      : `There are ${total} eligible contacts, but this sender can handle only ${people.length} in one run. No campaign was sent or scheduled. Safe batching is being implemented.`;
+    redirect(`${back}&error=${encodeURIComponent(warning)}`);
+  }
   const sendAt = s(fd, "send_at");
   if (sendAt) {
     const when = new Date(new Date(sendAt + "Z").getTime() - londonOffsetMs(sendAt));
@@ -395,8 +405,6 @@ export async function sendBroadcast(fd: FormData) {
     await logActivity(ws.id, "user", `scheduled ${channel} campaign`, "broadcast", undefined, subject ?? template ?? body?.slice(0, 40));
     redirect(`/broadcast?scheduled=1`);
   }
-  const { audience, deliver } = await import("@/lib/campaign");
-  const { people } = await audience(ws.id, { tag, listId }, channel);
   let sent = 0;
   for (const c of people) if ((await deliver(ws, c, msg)).ok) sent++;
   await logActivity(ws.id, "user", `sent ${channel} campaign`, "broadcast", undefined, `${sent} of ${people.length} sent`);
