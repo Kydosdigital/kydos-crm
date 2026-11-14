@@ -3,15 +3,25 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npx next typegen
-      - run: npx tsc --noEmit
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Generate Next.js types
+        run: npx next typegen
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
