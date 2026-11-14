@@ -10,7 +10,11 @@ Run `scripts/staging-uat-seed.sql` only on the staging project. It seeds two wor
 
 The SQL creates **no Auth users**, **no workspace memberships**, **no sender addresses**, **no provider API credentials**, and disables digest and AI agent modes. All email addresses end in reserved `.test`, so they are not real inboxes. Never use these fixtures to send live communications or charge real payment methods.
 
-The seed checks existence before insertion and is safe to repeat. Never run fixtures on production or a project containing real customer data.
+The seed now **fails closed** inside its transaction unless it finds both pre-existing synthetic QA workspace UUIDs, their exact slugs/names and disabled sending settings. This binds the script to the **already-initialised staging project**, not to an ambiguous database name. The precise UUIDs are not credentials. Never run fixtures on production or a project containing real customer data. A new staging database will deliberately fail the guard until it has been separately reviewed and initialised.
+
+The seed verifies the expected two workspaces, one QA pipeline and three QA stages per workspace, two dummy contacts per workspace, no outgoing sender settings, and both opted-out fixtures having email and SMS suppression enabled. These assertions run **before commit** and roll back any inserts if one fails.
+
+**Verification performed by the technical lead:** inspect the exact staging project ID before execution, execute the versioned SQL in staging, run the same SQL again, and check that workspace, pipeline, stage and contact counts have not changed. Separately evaluate the guard's UUID/name/slug predicate on production using a read-only SELECT and confirm it does **not** match. Never try the seed on production even to demonstrate that it fails. This proves a specific safety barrier, not that live data or role-isolation tests are complete.
 
 ## Next required Auth/role setup
 
