@@ -37,8 +37,8 @@ as $function$
       and a.active is true
       and not (r.id = any(coalesce(p_exclude_ids, '{}'::uuid[])) )
     order by r.next_run_at, r.id
-    for update of r skip locked
     limit least(greatest(coalesce(p_limit, 50), 1), 50)
+    for update of r skip locked
   )
   update public.automation_runs r
   set claim_token = gen_random_uuid(),
