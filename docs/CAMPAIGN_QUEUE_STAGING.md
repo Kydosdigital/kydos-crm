@@ -72,6 +72,10 @@ The repeatable, rollback-only `scripts/staging-kd094-integrity-test.sql` passed 
 - Test transaction rolled back, independently checked to leave zero `qa-kd094-integrity` contacts and zero test batches
 - The original 255-contact / 250-eligible snapshot and claim test was repeated **after** the new migration and passed with zero leftover test contacts, batches or recipients
 
+**Tenant integrity hardening:** Additive migration **0037_campaign_recipient_tenant_guard.sql** was applied to staging only as `kd094_campaign_tenant_guard_0037`. A server-side trigger now rejects `campaign_batch_recipients` inserts or key changes whose batch or contact belongs to a different workspace, even if the write is attempted with the service role. Existing status-only updates remain unaffected.
+
+`scripts/staging-kd094-tenant-guard-test.sql` passed in staging with the QA Alpha/Beta fingerprint: mismatched contact insert, mismatched batch/workspace insert and cross-tenant contact reassignment were all rejected; legitimate same-tenant records were accepted; the transaction was rolled back and no test batch remained. The original **250-recipient staged sweep** passed again after applying 0037, with zero persisted test records.
+
 **Not yet proven:** contact merge end-to-end through the application action, recipient identity/consent at dispatch time, client/browser UAT and external provider delivery. Marketing consent across multiple records sharing an address needs an explicit conservative suppression rule before real sending. No user-facing sending capability is authorised.
 
 ## Unfinished integration, mandatory before any live campaign
@@ -87,6 +91,6 @@ The repeatable, rollback-only `scripts/staging-kd094-integrity-test.sql` passed 
 
 ## Migration and release controls
 
-Staging contains the unmerged Stripe migrations corresponding to files 0028 through 0033 and KD-107 migration 0034. The queue schema is **0035**, followed by additive contact-integrity remediation **0036**, separate from the existing scheduled-send table. The production database is still on 0027. Production migration ordering requires resolving PR #23 and PR #33, QA and explicit release approval. Do not independently deploy migration 0035 or assume this PR authorises real sends.
+Staging contains the unmerged Stripe migrations corresponding to files 0028 through 0033 and KD-107 migration 0034. The queue schema is **0035**, followed by additive contact-integrity remediation **0036** and cross-tenant write guard **0037**, separate from the existing scheduled-send table. The production database is still on 0027. Production migration ordering requires resolving PR #23 and PR #33, QA and explicit release approval. Do not independently deploy migration 0035 or assume this PR authorises real sends.
 
 **Acceptance classification:** foundational database snapshot and checkpoint model passed its synthetic staging test. KD-094 overall remains In progress until queue-driven real application execution is tested and reviewed. KD-093 remains In progress, because its old 90-recipient path is not yet replaced.
