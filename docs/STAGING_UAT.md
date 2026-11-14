@@ -41,3 +41,11 @@ Until authentication and app configuration are complete, leave UAT-001 to UAT-00
 - Staging has additional unmerged Stripe/retainer migrations. These are **not** grounds for deploying production migrations; payment tests require a separate Stripe sandbox and approved test plan.
 - The SQL does not automatically provision the staging Vercel deployment or its server-side secrets, which must be configured separately and validated before browser UAT.
 - Do not delete these workspaces without checking whether QA evidence references them. Clean up deliberately after acceptance.
+
+## Executed safeguard and repeatability evidence, 14 November 2026
+
+- Read-only production sentinel query: **0** matching fixture workspace identities, so the guard would abort before any writes. No fixture SQL was executed on production.
+- Read-only staging sentinel query: **2** matching fixture workspace identities.
+- Ran the new versioned seed **twice** against staging `psnpdmwkevnxrdrjyiwk`; both transactions completed successfully, including in-transaction assertions.
+- Subsequent read-only counts: **2** synthetic workspaces, **2** QA pipelines, **6** QA stages, **4** synthetic contacts, **2** contacts with both opt-out flags enabled, **0** Auth users. Counts did not change between runs.
+- Outcome: automated seed safety, no duplicate insertion and core data fixtures verified. This is **not** browser/role security UAT and does not permit production promotion or customer invitations.
