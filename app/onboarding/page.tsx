@@ -39,7 +39,9 @@ export default async function Onboarding() {
       <Link href="/onboarding?refresh=1" className="btn btn-primary btn-lg mt-5 w-full">
         <RefreshCw className="h-4 w-4" aria-hidden /> Check team access
       </Link>
-      <Link href="/login" className="btn btn-ghost mt-3 w-full">Return to sign in</Link>
+      <p className="mt-4 text-center text-xs text-muted">
+        Your account is active. You can return here to check your team access again.
+      </p>
     </AuthShell>
   );
 }

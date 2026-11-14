@@ -27,26 +27,33 @@ export async function createAccount(form: FormData) {
   // Do not accept arbitrary origins, invite tokens or workspace IDs from users.
   const configured = process.env.NEXT_PUBLIC_APP_URL;
   if (!configured) redirect("/signup?error=unavailable");
-  let callback: URL;
+  let base: URL;
   try {
-    const base = new URL(configured);
-    if (base.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && base.hostname === "localhost"))
-      redirect("/signup?error=unavailable");
-    callback = new URL("/auth/callback?next=%2Fonboarding", base);
+    base = new URL(configured);
   } catch {
     redirect("/signup?error=unavailable");
   }
+  if (base.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && base.hostname === "localhost"))
+    redirect("/signup?error=unavailable");
+  const callback = new URL("/auth/callback?next=%2Fonboarding", base);
 
   const supabase = await supabaseServer();
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: callback.toString(),
-      // Display information only. Never use mutable user_metadata for roles.
-      data: { full_name: name },
-    },
-  });
+  let result: Awaited<ReturnType<typeof supabase.auth.signUp>>;
+  try {
+    result = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: callback.toString(),
+        // Display information only. Never use mutable user_metadata for roles.
+        data: { full_name: name },
+      },
+    });
+  } catch {
+    // Provider/network failure. Never log user credentials or email.
+    redirect("/signup?error=unavailable");
+  }
+  const { data, error } = result;
 
   if (error) {
     // Keep untrusted provider messages and email-existence details off the UI.

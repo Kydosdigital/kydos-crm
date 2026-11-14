@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/workspace";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { inviteMember, removeMember } from "../../actions";
@@ -28,7 +29,7 @@ export default async function Team({ searchParams }: { searchParams: Promise<{ e
         <Card>
           <CardTitle icon={UserPlus}>Invite a teammate</CardTitle>
           <p className="mb-3 text-xs leading-relaxed text-muted">
-            Teammates can now <a href="/signup" className="link">create their own account</a>
+            Teammates can now <Link href="/signup" className="link">create their own account</Link>
             with email and password. Invite that same email here to add them to this business
             with the role you choose. If they have no account yet, they can use the invitation email to join.
           </p>

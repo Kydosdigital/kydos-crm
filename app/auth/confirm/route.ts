@@ -8,7 +8,7 @@ const safe = (n: string | null, fallback = "/contacts") =>
 export async function GET(req: Request) {
   const u = new URL(req.url);
   const q = u.searchParams;
-  const html = `<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:system-ui;max-width:360px;margin:96px auto;padding:0 16px;text-align:center"><h1 style="font-size:20px">Kydos CRM</h1><p>Click to continue.</p><form method=post action="/auth/confirm"><input type=hidden name=token_hash value="${(q.get("token_hash") ?? "").replace(/[^\w-]/g, "")}"><input type=hidden name=type value="${(q.get("type") ?? "").replace(/[^\w]/g, "")}"><input type=hidden name=next value="${safe(q.get("next")).replace(/[^\w/-]/g, "")}"><button style="background:#0e5a48;color:#fff;border:0;padding:12px 28px;border-radius:6px;font-size:16px;cursor:pointer">Continue</button></form></body>`;
+  const html = `<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><body style="font-family:system-ui;max-width:360px;margin:96px auto;padding:0 16px;text-align:center"><h1 style="font-size:20px">Kydos CRM</h1><p>Click to continue.</p><form method=post action="/auth/confirm"><input type=hidden name=token_hash value="${(q.get("token_hash") ?? "").replace(/[^\w-]/g, "")}"><input type=hidden name=type value="${(q.get("type") ?? "").replace(/[^\w]/g, "")}"><input type=hidden name=next value="${safe(q.get("next"), q.get("type") === "email" ? "/onboarding" : "/contacts").replace(/[^\w/-]/g, "")}"><button style="background:#0e5a48;color:#fff;border:0;padding:12px 28px;border-radius:6px;font-size:16px;cursor:pointer">Continue</button></form></body>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
