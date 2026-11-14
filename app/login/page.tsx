@@ -10,7 +10,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
     <AuthShell>
       <PublicHeading title="Welcome back">Sign in with a one-time link sent to your email. No password needed.</PublicHeading>
       {error && <Alert tone="danger">{error}</Alert>}
-      {sent && <Alert tone="success">If that email has access, a link is on its way. Check your inbox and spam.</Alert>}
+      {sent && <Alert tone="neutral">If your address has an account and email delivery is available, a sign-in link should arrive shortly. Check spam too. If nothing arrives, use password sign-in or contact your CRM administrator.</Alert>}
       <form action={requestLink} className="flex flex-col gap-3">
         <Field label="Work email">
           <input name="email" type="email" placeholder="you@company.co.uk" autoComplete="email" required className="input !h-11 !text-sm" />
