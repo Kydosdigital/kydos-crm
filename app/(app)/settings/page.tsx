@@ -102,6 +102,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
   <input name="first_name" placeholder="First name" required>
   <input name="email" type="email" placeholder="Email" required>
   <input name="phone" placeholder="Phone">
+  <input name="kd_hp_contact" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-10000px">
   <label><input type="checkbox" name="consent"> I agree to be contacted by email about my enquiry</label>
   <button>Send</button>
 </form>
@@ -109,11 +110,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 document.getElementById("kydos-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  await fetch("${url}/api/forms/contact-us", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on" })
-  });
-  e.target.innerHTML = "Thanks, we will be in touch.";
+  let ok = false;
+  try {
+    const res = await fetch("${url}/api/forms/contact-us", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace: "${active.slug}", first_name: f.get("first_name"), email: f.get("email"), phone: f.get("phone"), consent: f.get("consent") === "on", kd_hp_contact: f.get("kd_hp_contact") })
+    });
+    ok = res.ok;
+  } catch (err) { ok = false; }
+  if (ok) { e.target.innerHTML = "Thanks, we will be in touch."; return; }
+  let msg = e.target.querySelector("[data-kydos-error]");
+  if (!msg) { msg = document.createElement("p"); msg.setAttribute("data-kydos-error", ""); msg.setAttribute("role", "alert"); e.target.appendChild(msg); }
+  msg.textContent = "Sorry, your message did not send. Please try again or email us directly.";
 });
 </script>`} />
               </Section>
