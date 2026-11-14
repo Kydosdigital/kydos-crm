@@ -1,7 +1,8 @@
 import { supabaseServer } from "@/lib/supabase/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
-const safe = (n: string | null) => (n && n.startsWith("/") && !n.startsWith("//") ? n : "/contacts");
+const safe = (n: string | null, fallback = "/contacts") =>
+  n && n.startsWith("/") && !n.startsWith("//") && !/[\\\r\n]/.test(n) ? n : fallback;
 
 // Step 1 (GET): show a Continue button, so email security scanners that pre-open links do not use up the one-time token.
 export async function GET(req: Request) {
@@ -18,5 +19,5 @@ export async function POST(req: Request) {
   const db = await supabaseServer();
   const { error } = await db.auth.verifyOtp({ token_hash: String(fd.get("token_hash")), type: String(fd.get("type")) as EmailOtpType });
   if (error) return Response.redirect(new URL("/login?error=" + encodeURIComponent("That link has expired or was already used. Request a new one. (" + error.message + ")"), base()), 303);
-  return Response.redirect(new URL(safe(String(fd.get("next"))), base()), 303);
+  return Response.redirect(new URL(safe(String(fd.get("next")), String(fd.get("type")) === "email" ? "/onboarding" : "/contacts"), base()), 303);
 }

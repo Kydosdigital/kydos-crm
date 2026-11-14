@@ -23,8 +23,18 @@ async function contactInWorkspace(db: Awaited<ReturnType<typeof supabaseServer>>
 // ───────── Auth & workspaces ─────────
 export async function login(fd: FormData) {
   const db = await supabaseServer();
-  const { error } = await db.auth.signInWithPassword({ email: String(fd.get("email")), password: String(fd.get("password")) });
-  if (error) redirect("/login?error=" + encodeURIComponent(error.message));
+  const email = String(fd.get("email") ?? "").trim().toLowerCase();
+  const password = String(fd.get("password") ?? "");
+  if (!email || !password) redirect("/login?error=invalid");
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+  if (error || !data.user) {
+    if (error?.code === "email_not_confirmed") redirect("/login?error=verify");
+    if (error?.status === 429) redirect("/login?error=limited");
+    redirect("/login?error=invalid");
+  }
+  const { data: member, error: memberError } = await db.from("workspace_members")
+    .select("workspace_id").eq("user_id", data.user.id).limit(1);
+  if (memberError || !member?.length) redirect("/onboarding");
   redirect("/contacts");
 }
 
