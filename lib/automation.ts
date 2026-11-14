@@ -68,31 +68,85 @@ export async function fireTrigger(workspaceId: string, contactId: string, ev: Tr
   }
 }
 
-/** Processes every due run. Called by the cron route (every minute on Vercel Pro, or every 5 min via any scheduler). */
+/** Atomically claim each due run before executing any external side effect.
+ * A worker crash never causes an automatic replay: an expired claim is marked
+ * failed for investigation because a provider may already have accepted a send.
+ * Migration 0034 must be deployed in staging and tested before deploying this code.
+ */
 export async function processDueRuns(limit = 50) {
   const db = supabaseAdmin();
-  const { data: runs } = await db
-    .from("automation_runs")
-    .select("*")
-    .eq("status", "active")
-    .lte("next_run_at", new Date().toISOString())
-    .order("next_run_at")
-    .limit(limit);
+  const { data: expired, error: expiryError } = await db.rpc("expire_stale_automation_claims");
+  if (expiryError) throw new Error("Unable to quarantine stale automation claims: " + expiryError.message);
+  for (const stale of expired ?? []) {
+    try {
+      await notifyOwner(stale.workspace_id, "Automation claim expired", "Run " + stale.run_id + " requires manual verification before retrying any step.");
+    } catch (error) {
+      console.error("Could not alert owner about expired automation claim", error);
+    }
+  }
 
+  const seen: string[] = [];
   let processed = 0;
-  for (const run of runs ?? []) {
+  // Claim ONE run at a time, so a timeout does not strand a whole 50-run batch.
+  // Exclude already-processed IDs to avoid running multiple steps in one sweep.
+  for (let i = 0; i < Math.min(50, Math.max(0, Math.floor(limit))); i++) {
+    const { data: claimed, error: claimError } = await db.rpc("claim_due_automation_runs", {
+      p_limit: 1,
+      p_exclude_ids: seen,
+    });
+    if (claimError) throw new Error("Unable to claim due automation run: " + claimError.message);
+    const run = (claimed ?? [])[0] as Run | undefined;
+    if (!run) break;
+    if (!run.claim_token) throw new Error("Claimed run missing ownership token: " + run.id);
+    seen.push(run.id);
+
     try {
       await advance(run);
-    } catch (e) {
-      await db.from("automation_runs").update({ status: "failed", last_error: String(e) }).eq("id", run.id);
-      await notifyOwner(run.workspace_id, "Automation run failed", `Run ${run.id} failed: ${String(e)}`);
+    } catch (error) {
+      // Only the owning worker can mark its claim failed; another worker may
+      // already have quarantined an expired lease. Never replay automatically.
+      const { data: failed, error: markError } = await db.from("automation_runs")
+        .update({
+          status: "failed",
+          last_error: String(error).slice(0, 2000),
+          claim_token: null,
+          claim_started_at: null,
+          claim_expires_at: null,
+        })
+        .eq("id", run.id).eq("workspace_id", run.workspace_id)
+        .eq("status", "active").eq("claim_token", run.claim_token)
+        .select("id").maybeSingle();
+      if (markError || !failed) {
+        console.error("Automation claim could not be marked failed, manual review required", run.id, markError);
+      } else {
+        try {
+          await notifyOwner(run.workspace_id, "Automation run failed", "Run " + run.id + " failed: " + String(error));
+        } catch (alertError) {
+          console.error("Could not alert owner about automation failure", alertError);
+        }
+      }
     }
     processed++;
   }
   return processed;
 }
 
-type Run = { id: string; workspace_id: string; automation_id: string; contact_id: string; step_position: number; started_at: string; context: Record<string, unknown> | null; wait_started_at: string | null };
+type Run = {
+  id: string; workspace_id: string; automation_id: string; contact_id: string;
+  step_position: number; started_at: string;
+  context: Record<string, unknown> | null; wait_started_at: string | null;
+  claim_token: string;
+};
+
+/** Persist a step transition only if this worker still owns the atomic claim. */
+async function releaseClaim(run: Run, patch: Record<string, unknown>) {
+  const { data, error } = await supabaseAdmin().from("automation_runs")
+    .update({ ...patch, claim_token: null, claim_started_at: null, claim_expires_at: null })
+    .eq("id", run.id).eq("workspace_id", run.workspace_id)
+    .eq("status", "active").eq("claim_token", run.claim_token)
+    .select("id").maybeSingle();
+  if (error || !data) throw new Error("Claimed automation step could not be committed: " + run.id);
+}
 
 const SSRF = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1)/i;
 
@@ -136,14 +190,21 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
 
 async function advance(run: Run) {
   const db = supabaseAdmin();
-  const [{ data: step }, { data: contact }, { data: ws }] = await Promise.all([
-    db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("position", run.step_position).maybeSingle(),
-    db.from("contacts").select("*").eq("id", run.contact_id).single(),
+  const [{ data: step }, { data: contact }, { data: ws }, { data: automation }] = await Promise.all([
+    db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("workspace_id", run.workspace_id).eq("position", run.step_position).maybeSingle(),
+    db.from("contacts").select("*").eq("id", run.contact_id).eq("workspace_id", run.workspace_id).single(),
     db.from("workspaces").select("*").eq("id", run.workspace_id).single(),
+    db.from("automations").select("active").eq("id", run.automation_id).eq("workspace_id", run.workspace_id).maybeSingle(),
   ]);
 
-  if (!step || !contact || !ws) {
-    await db.from("automation_runs").update({ status: "done" }).eq("id", run.id);
+  // A paused automation does not execute a new step, even if it was claimed
+  // shortly before the operator switched off the workflow.
+  if (automation && !automation.active) {
+    await releaseClaim(run, {});
+    return;
+  }
+  if (!step || !contact || !ws || !automation) {
+    await releaseClaim(run, { status: "done" });
     return;
   }
 
@@ -151,6 +212,7 @@ async function advance(run: Run) {
   let nextAt = new Date();
   let stop = false;
   let jump = 1; // how many step positions to move on (skip_if etc. add more)
+  let clearWaitStart = false;
 
   // Booking context (appointment reminders and follow-ups)
   const bookingId = run.context?.booking_id as string | undefined;
@@ -224,20 +286,19 @@ async function advance(run: Run) {
       break;
     }
     case "end":
-      stop = true;
-      await db.from("automation_runs").update({ status: "done" }).eq("id", run.id);
+      await releaseClaim(run, { status: "done" });
       return;
     case "wait_until": {
       if (await evalCond(String(cfg.cond ?? ""), run, contact)) {
-        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        clearWaitStart = true;
         break; // goal reached, move on
       }
       const started = run.wait_started_at ? new Date(run.wait_started_at) : new Date();
       if (Date.now() - started.getTime() >= Number(cfg.hours ?? 24) * 3600_000) {
-        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        clearWaitStart = true;
         break; // timed out, move on (a following skip_unless can branch on the goal)
       }
-      await db.from("automation_runs").update({ wait_started_at: started.toISOString(), next_run_at: new Date(Date.now() + 5 * 60_000).toISOString() }).eq("id", run.id);
+      await releaseClaim(run, { wait_started_at: started.toISOString(), next_run_at: new Date(Date.now() + 5 * 60_000).toISOString() });
       return;
     }
     case "wait_before":
@@ -300,11 +361,12 @@ async function advance(run: Run) {
   }
 
   if (stop) {
-    await db.from("automation_runs").update({ status: "stopped" }).eq("id", run.id);
+    await releaseClaim(run, { status: "stopped" });
     return;
   }
-  await db
-    .from("automation_runs")
-    .update({ step_position: run.step_position + jump, next_run_at: nextAt.toISOString() })
-    .eq("id", run.id);
+  await releaseClaim(run, {
+    step_position: run.step_position + jump,
+    next_run_at: nextAt.toISOString(),
+    ...(clearWaitStart ? { wait_started_at: null } : {}),
+  });
 }
