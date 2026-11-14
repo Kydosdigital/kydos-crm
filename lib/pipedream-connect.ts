@@ -10,6 +10,7 @@ const PROJECT_ID = "proj_vosZn53";
 const API = "https://api.pipedream.com";
 const OAUTH_SCOPES = "connect:tokens:create connect:accounts:read";
 const CONNECT_SCOPES = "connect:accounts:read connect:accounts:write";
+const REVIEWED_APPS = new Set(["google_sheets", "gmail", "notion", "github"]);
 
 export type ConnectedPipedreamAccount = {
   id: string;
@@ -22,6 +23,10 @@ export type ConnectedPipedreamAccount = {
 
 export function pipedreamConfigured(): boolean {
   const env = process.env.PIPEDREAM_ENVIRONMENT;
+  // Fail closed if the Vercel deployment target and Pipedream environment differ.
+  // A preview must never create or list real production connected accounts.
+  if (process.env.VERCEL_ENV === "production" && env !== "production") return false;
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production" && env !== "development") return false;
   return process.env.PIPEDREAM_CONNECT_ENABLED === "true"
     && process.env.PIPEDREAM_PROJECT_ID === PROJECT_ID
     && (env === "production" || env === "development")
@@ -45,7 +50,8 @@ export function workspaceExternalUserId(workspaceId: string): string {
 }
 
 export function validPipedreamAppSlug(slug: string): boolean {
-  return /^[a-z][a-z0-9_]{0,63}$/.test(slug);
+  // The browser is untrusted. Only explicitly reviewed apps may be authorised.
+  return REVIEWED_APPS.has(slug);
 }
 
 async function accessToken(): Promise<{ token: string; environment: string }> {

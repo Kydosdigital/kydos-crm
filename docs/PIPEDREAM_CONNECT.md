@@ -45,6 +45,7 @@ The application intentionally refuses to connect when any configuration is absen
 
 - A connection changes authorisation state **in Pipedream**, not any Kydos CRM contact or CRM data.
 - The admin may authorise only the four reviewed app slugs; more can be reviewed and added later.
+- The server action rejects any modified form requesting a slug outside the allowlist. On Vercel, a preview build may only use Pipedream \`development\`, and production may only use \`production\`. Check both denial paths before activating.
 - `listWorkspacePipedreamAccounts` fetches account metadata without `include_credentials` and returns a strict non-secret projection.
 - Token and Connect Link URL are transient and not logged or stored in the CRM. Hosted Connect Link redirects to Pipedream; return to this page and refresh to view status.
 - API errors are deliberately generic; detailed secrets and upstream responses must not be exposed in the UI.
