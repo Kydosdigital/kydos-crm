@@ -1,7 +1,7 @@
 # Kydos CRM workspace recovery runbook
 
 **Status:** Recovery procedure for a supervised staging rehearsal, not an automated restore command.  
-**Owner:** Kydos administrator with Claude/database engineering support.  
+**Owner:** Kydos technical lead, with the product owner's approval for staging or production restoration decisions.  
 **Related tasks:** KD-195 (complete exports), KD-197 (backup alerts), KD-199 (isolated restoration test).
 
 ## What the backup contains
@@ -32,7 +32,7 @@
 
 ### 2. Prepare schema and identities
 
-- Provision an **empty** staging database and apply the repository's Supabase migrations in order, using the approved deployment process. Only Claude/database engineering applies migrations.
+- Provision an **empty** staging database and apply the repository's Supabase migrations in order, using the approved deployment process. Only the accountable technical lead prepares migration changes, and production application requires staged evidence and product-owner approval.
 - Recreate the minimal test Auth identities through Supabase Auth's supported administration workflow. Auth identities are **not** part of workspace JSON.
 - Build a mapping of source `workspace_members.user_id` to staging Auth IDs. Do not insert membership rows with nonexistent `auth.users` references.
 - Verify that RLS is enabled on imported tables and that the staging connection uses an appropriately privileged administrative import role. After import, test with normal owner, member and client sessions.
