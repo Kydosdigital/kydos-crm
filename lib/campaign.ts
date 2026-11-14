@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase/admin";
 import { sendEmail, sendSms, render } from "./messaging";
 import { sendWhatsAppTemplate } from "./whatsapp";
-import { matchList } from "./lists";
+import { matchList, matchListVerified } from "./lists";
 
 export type Channel = "email" | "sms" | "whatsapp";
 export const CAP: Record<Channel, number> = { email: 90, sms: 100, whatsapp: 100 };
@@ -32,12 +32,14 @@ export async function audience(wsId: string, a: { tag?: string | null; listId?: 
     if (listError || !l || (l.filter as { state?: string } | null)?.state) {
       return { total: 0, people: [] as Contact[], incomplete: true };
     }
-    people = await matchList(wsId, l.filter);
+    const verified = await matchListVerified(wsId, l.filter);
+    if (verified.incomplete) return { total: 0, people: [] as Contact[], incomplete: true };
+    people = verified.people;
   } else if (a.tag) {
     const { data, count, error } = await db.from("contacts")
       .select("*", { count: "exact" }).eq("workspace_id", wsId)
       .contains("tags", [a.tag]).limit(5000);
-    if (error || count === null || count > 5000) {
+    if (error || count === null || count > 5000 || (data?.length ?? 0) !== count) {
       return { total: 0, people: [] as Contact[], incomplete: true };
     }
     people = (data ?? []) as Contact[];
