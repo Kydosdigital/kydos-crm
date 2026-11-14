@@ -120,12 +120,54 @@ begin
   select count(*) into v_count from public.claim_email_campaign_recipients(v_batch,90);
   if v_count<>20 then raise exception 'Dispatch claim was not bounded to 20 rows'; end if;
 
-  -- Cancelling a batch prevents further claims even with queued rows.
+  -- Cancelling a batch prevents further claims even while queued rows remain.
   update public.campaign_batches set status='cancelled' where id=v_batch;
   select count(*) into v_count from public.claim_email_campaign_recipients(v_batch,1);
   if v_count<>0 then raise exception 'Cancelled batch was still claimable'; end if;
+  -- Reset only inside this rollback-only synthetic test.
+  update public.campaign_batches set status='prepared' where id=v_batch;
 
-  raise notice 'PASS KD-094: 255 snapshot, 250 queued, 5 excluded, idempotence, tenant isolation, token checkpoints, stale quarantine, bounded claims and cancellation';
+  -- Simulate provider acknowledgements for every already-claimed row, never
+  -- making an external call. A distinct fake ID represents each acceptance.
+  for v_recipient in
+    select * from public.campaign_batch_recipients
+    where batch_id=v_batch and status='sending'
+  loop
+    select public.finish_email_campaign_recipient(
+      v_recipient.id,v_recipient.claim_token,'sent','synthetic-provider-'||v_recipient.id::text
+    ) into v_ok;
+    if not v_ok then raise exception 'Failed to checkpoint a pre-claimed recipient'; end if;
+  end loop;
+
+  -- Repeated bounded claims must consume the entire remaining audience,
+  -- including contacts beyond index 90, with no skipping or duplicate sends.
+  loop
+    v_count := 0;
+    for v_recipient in select * from public.claim_email_campaign_recipients(v_batch,20)
+    loop
+      select public.finish_email_campaign_recipient(
+        v_recipient.id,v_recipient.claim_token,'sent','synthetic-provider-'||v_recipient.id::text
+      ) into v_ok;
+      if not v_ok then raise exception 'Failed to checkpoint a recipient'; end if;
+      v_count := v_count + 1;
+    end loop;
+    exit when v_count = 0;
+  end loop;
+
+  if (select count(*) from public.campaign_batch_recipients
+      where batch_id=v_batch and status='sent') <> 249
+    or (select count(*) from public.campaign_batch_recipients
+        where batch_id=v_batch and status='unknown') <> 1
+    or (select count(*) from public.campaign_batch_recipients
+        where batch_id=v_batch and status='excluded') <> 5
+    or (select count(*) from public.campaign_batch_recipients
+        where batch_id=v_batch and status in ('queued','sending')) <> 0
+    or (select sum(attempt_count) from public.campaign_batch_recipients
+        where batch_id=v_batch and status <> 'excluded') <> 250 then
+    raise exception '250-recipient progress reconciliation failed';
+  end if;
+
+  raise notice 'PASS KD-094: 255 snapshot, 250 eligible accounted, 5 excluded, 249 fake acknowledgements, 1 unknown, zero unprocessed, idempotence, tenant isolation, token checkpoints, stale quarantine, bounded claims and cancellation';
 end;
 $test$;
 
