@@ -48,6 +48,32 @@ A second, expanded rollback-only run also consumed all 250 eligible recipients t
 
 The SQL assertion block raises an error if any expected result is wrong. The execution returned successfully; read-only post-run queries independently confirmed zero fixture leftovers. **No provider send was attempted.**
 
+## Review remediation: contact history and duplicate ranking, 14 November 2026
+
+Independent review found two defects in the original 0035 migration:
+
+1. `ON DELETE CASCADE` on `campaign_batch_recipients.contact_id` silently removed recipient checkpoints when a contact was deleted or merged.
+2. The duplicate-ranking predicate validated untrimmed email addresses, although the final eligibility check used trimmed addresses. An older opted-out duplicate could incorrectly outrank a newer eligible address containing trailing whitespace.
+
+Because **0035 had already been applied to staging**, its migration file was left unchanged. The corrective **0036_campaign_recipient_integrity.sql** migration was applied to staging as `kd094_recipient_integrity_0036`, not production.
+
+The correction changes the contact reference to nullable `ON DELETE SET NULL`. A restricted `BEFORE DELETE` trigger preserves checkpoint rows and clears recipient email and destination data. A queued recipient becomes excluded with reason `contact_deleted`; an in-flight recipient becomes `unknown` to avoid automatically replaying a possibly completed provider action; a previously accepted result remains accepted with its provider reference and no email address. Batch selected/queued/excluded fields remain an immutable **preparation-time snapshot**, not current delivery counters.
+
+The corrected preparation function uses the **same trimmed email validation** for duplicate ranking and eligibility. The 0036 migration is additive; never edit or replay the already applied 0035 migration.
+
+### Regression tests executed in staging
+
+The repeatable, rollback-only `scripts/staging-kd094-integrity-test.sql` passed on staging project `psnpdmwkevnxrdrjyiwk`:
+
+- Older opted-out contact and newer eligible whitespace-variant email: the eligible contact is selected; 2 selected, 1 queued, 1 excluded
+- Deleting the queued contact: checkpoint retained, contact reference null, stored recipient email/destination removed, status excluded
+- Deleting an in-flight contact: checkpoint retained, claim cleared and status set to unknown, not automatically replayed
+- Deleting an already accepted contact: accepted status and synthetic provider reference retained, email address removed
+- Test transaction rolled back, independently checked to leave zero `qa-kd094-integrity` contacts and zero test batches
+- The original 255-contact / 250-eligible snapshot and claim test was repeated **after** the new migration and passed with zero leftover test contacts, batches or recipients
+
+**Not yet proven:** contact merge end-to-end through the application action, recipient identity/consent at dispatch time, client/browser UAT and external provider delivery. Marketing consent across multiple records sharing an address needs an explicit conservative suppression rule before real sending. No user-facing sending capability is authorised.
+
 ## Unfinished integration, mandatory before any live campaign
 
 1. Add a reviewed server-side enqueue flow for staff, with consent confirmation, template preview, exact audience count and cost estimate. Only approved sender identities and workspace destinations should be accepted.
@@ -61,6 +87,6 @@ The SQL assertion block raises an error if any expected result is wrong. The exe
 
 ## Migration and release controls
 
-Staging contains the unmerged Stripe migrations corresponding to files 0028 through 0033 and KD-107 migration 0034. This queue schema is **0035**, separate from the existing scheduled-send table. The production database is still on 0027. Production migration ordering requires resolving PR #23 and PR #33, QA and explicit release approval. Do not independently deploy migration 0035 or assume this PR authorises real sends.
+Staging contains the unmerged Stripe migrations corresponding to files 0028 through 0033 and KD-107 migration 0034. The queue schema is **0035**, followed by additive contact-integrity remediation **0036**, separate from the existing scheduled-send table. The production database is still on 0027. Production migration ordering requires resolving PR #23 and PR #33, QA and explicit release approval. Do not independently deploy migration 0035 or assume this PR authorises real sends.
 
 **Acceptance classification:** foundational database snapshot and checkpoint model passed its synthetic staging test. KD-094 overall remains In progress until queue-driven real application execution is tested and reviewed. KD-093 remains In progress, because its old 90-recipient path is not yet replaced.
