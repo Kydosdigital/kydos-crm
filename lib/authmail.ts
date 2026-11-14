@@ -53,12 +53,12 @@ export async function sendAuthLink(email: string, kind: LinkKind, inviteWorkspac
   if (existing === "lookup_failed") return failure("user_lookup");
   if (!existing && kind !== "invite") return { ok: false, error: "no account" };
 
-  type Workspace = { id: string; name: string; email_from: string | null; created_at: string };
+  type Workspace = { id: string; name: string; email_from: string | null; created_at: string; brand_color: string | null; logo_url: string | null; email_signature: string | null; business_address: string | null; website_url: string | null };
   let ws: Workspace | undefined;
   if (kind === "invite") {
     if (!inviteWorkspaceId) return failure("workspace_sender", "invite_workspace_missing");
     const { data, error } = await db.from("workspaces")
-      .select("id,name,email_from,created_at").eq("id", inviteWorkspaceId).maybeSingle();
+      .select("id,name,email_from,created_at,brand_color,logo_url,email_signature,business_address,website_url").eq("id", inviteWorkspaceId).maybeSingle();
     if (error || !data || !senderReady(data.email_from))
       return failure("workspace_sender", "invite_workspace_unconfigured");
     ws = data as Workspace;
@@ -69,7 +69,7 @@ export async function sendAuthLink(email: string, kind: LinkKind, inviteWorkspac
     if (membershipError || !memberships?.length) return failure("workspace_sender", "membership_missing");
     const ids = memberships.map(m => m.workspace_id);
     const { data: workspaces, error: workspacesError } = await db.from("workspaces")
-      .select("id,name,email_from,created_at").in("id", ids).order("created_at", { ascending: true });
+      .select("id,name,email_from,created_at,brand_color,logo_url,email_signature,business_address,website_url").in("id", ids).order("created_at", { ascending: true });
     if (workspacesError) return failure("workspace_sender", "workspace_lookup_failed");
     ws = (workspaces ?? []).find(w => senderReady(w.email_from)) as Workspace | undefined;
     if (!ws) return failure("workspace_sender", "no_configured_membership_sender");
