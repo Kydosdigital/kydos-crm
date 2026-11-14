@@ -95,53 +95,7 @@ begin
         partition by lower(btrim(c.email))
         order by
           case when c.email_opt_out = false
-                     and btrim(c.email) ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,} then 0 else 1 end,
-          c.created_at, c.id
-      ) as email_rank
-    from public.contacts c
-    where c.workspace_id = v_batch.workspace_id
-      and c.tags @> array[v_batch.source_tag]::text[]
-  ),
-  snapshot as (
-    select r.*,
-      case
-        when r.email is null or btrim(r.email) = '' then 'missing_email'
-        when r.email_key !~* '^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$' then 'invalid_email'
-        when r.email_opt_out then 'opted_out'
-        when r.email_rank > 1 then 'duplicate_destination'
-        else null
-      end as excluded_because
-    from ranked r
-  )
-  insert into public.campaign_batch_recipients (
-    batch_id, workspace_id, contact_id, recipient_email,
-    destination_key, status, exclusion_reason
-  )
-  select v_batch.id, v_batch.workspace_id, s.contact_id, s.email,
-    s.email_key,
-    case when s.excluded_because is null then 'queued' else 'excluded' end,
-    s.excluded_because
-  from snapshot s
-  on conflict (batch_id, contact_id) do nothing;
-
-  update public.campaign_batches b
-  set status = 'prepared',
-      prepared_at = clock_timestamp(),
-      selected_count = v_selected,
-      queued_count = (select count(*) from public.campaign_batch_recipients r
-                      where r.batch_id = v_batch.id and r.status = 'queued'),
-      excluded_count = (select count(*) from public.campaign_batch_recipients r
-                        where r.batch_id = v_batch.id and r.status = 'excluded')
-  where b.id = v_batch.id
-  returning * into v_batch;
-
-  if v_batch.selected_count <> v_batch.queued_count + v_batch.excluded_count then
-    raise exception 'Campaign queue mismatch, snapshot rolled back';
-  end if;
-  return v_batch;
-end;
-$fn$;
- then 0 else 1 end,
+                     and btrim(c.email) ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$' then 0 else 1 end,
           c.created_at, c.id
       ) as email_rank
     from public.contacts c
