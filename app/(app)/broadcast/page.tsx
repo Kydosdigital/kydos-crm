@@ -10,18 +10,25 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
   const { ws } = await requireStaff();
   const db = await supabaseServer();
   let count: number | null = null;
+  let incomplete = false;
   let listName: string | null = null;
   if (list) {
     const { data: l } = await db.from("smart_lists").select("name").eq("id", list).eq("workspace_id", ws.id).maybeSingle();
     listName = l?.name ?? null;
   }
-  if (list || tag) count = (await (await import("@/lib/campaign")).audience(ws.id, { tag, listId: list }, channel)).total;
+  if (list || tag) {
+    const result = await (await import("@/lib/campaign")).audience(ws.id, { tag, listId: list }, channel);
+    count = result.total;
+    incomplete = result.incomplete;
+  }
   const CAPS = { email: 90, sms: 100, whatsapp: 100 };
   const { data: queue } = await db.from("scheduled_sends").select("*").eq("workspace_id", ws.id).order("send_at", { ascending: false }).limit(10);
   return (
     <Page>
       <PageHeader title="Bulk campaigns" description="Send one message to everyone with a tag or in a smart list, by email, SMS or WhatsApp. Opted-out contacts are always excluded." />
       {error && <Alert tone="danger">{error}</Alert>}
+      {incomplete && <Alert tone="danger">The complete audience cannot be verified safely. Sending and scheduling are blocked until safe batching is available.</Alert>}
+      {!incomplete && count !== null && count > CAPS[channel] && <Alert tone="danger">This campaign has {count} eligible recipients, above the current safe limit of {CAPS[channel]}. No partial sends are allowed. Safe batching is being implemented.</Alert>}
       {scheduled && <Alert tone="success">Scheduled. It will send automatically.</Alert>}
       {done && <Alert tone="success">Sent to {done}{of ? ` of ${of}` : ""} contacts.</Alert>}
       <div className="grid grid-cols-[minmax(0,1fr)_360px] items-start gap-6">
@@ -33,7 +40,7 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
               {list ? <input type="hidden" name="list" value={list} /> : <Field label="Tag" className="flex-1"><input name="tag" defaultValue={tag} placeholder="Tag to message" className="input" /></Field>}
               <button className="btn btn-secondary">Check recipients</button>
             </form>
-            {count !== null && <p className="alert alert-info mt-4"><Users aria-hidden /><span><b className="font-semibold">{count} contacts</b> can receive this {channel} campaign (opted-out and missing {channel === "email" ? "emails" : "numbers"} excluded). Each send is capped at {CAPS[channel]}.{channel === "sms" && " SMS costs about 4p per message part."}{channel === "whatsapp" && " WhatsApp marketing templates are charged by Meta per message."}</span></p>}
+            {count !== null && !incomplete && <p className="alert alert-info mt-4"><Users aria-hidden /><span><b className="font-semibold">{count} contacts</b> can receive this {channel} campaign (opted-out and missing {channel === "email" ? "emails" : "numbers"} excluded). Each send is capped at {CAPS[channel]}.{channel === "sms" && " SMS costs about 4p per message part."}{channel === "whatsapp" && " WhatsApp marketing templates are charged by Meta per message."}</span></p>}
           </Card>
           <Card>
             <CardTitle icon={Send} aside={<ChannelIcon channel={channel} label />}>2. Message</CardTitle>
@@ -49,7 +56,7 @@ export default async function Broadcast({ searchParams }: { searchParams: Promis
               <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line pt-4">
                 <label className="block"><span className="label">Schedule for later (UK time, leave empty to send now)</span><input type="datetime-local" name="send_at" className="input !w-60" /></label>
                 <label className="block"><span className="label">Repeat (needs a schedule time)</span><select name="repeat" className="select !w-44"><option value="none">Do not repeat</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="monthly">Monthly</option></select></label>
-                <button className="btn btn-primary"><Send aria-hidden />Send or schedule</button>
+                <button className="btn btn-primary" disabled={incomplete || (count !== null && count > CAPS[channel])}><Send aria-hidden />Send or schedule</button>
               </div>
             </form>
           </Card>
