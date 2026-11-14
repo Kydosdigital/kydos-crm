@@ -20,7 +20,7 @@ create index if not exists automation_runs_claim_timeout_idx
 -- concurrent schedulers cannot claim the same run at the same time.
 -- Paused automations are never selected. Returning a token lets the worker
 -- update/release only its own claim.
-create or replace function public.claim_due_automation_runs(p_limit integer default 50)
+create or replace function public.claim_due_automation_runs(p_limit integer default 50, p_exclude_ids uuid[] default '{}'::uuid[])
 returns setof public.automation_runs
 language sql
 security definer
@@ -35,6 +35,7 @@ as $function$
       and r.claim_token is null
       and r.next_run_at <= clock_timestamp()
       and a.active is true
+      and not (r.id = any(coalesce(p_exclude_ids, '{}'::uuid[])) )
     order by r.next_run_at, r.id
     for update of r skip locked
     limit least(greatest(coalesce(p_limit, 50), 1), 50)
@@ -70,9 +71,9 @@ as $function$
 $function$;
 
 -- Supabase grants EXECUTE on new functions to PUBLIC by default unless revoked.
-revoke all on function public.claim_due_automation_runs(integer)
+revoke all on function public.claim_due_automation_runs(integer, uuid[])
   from public, anon, authenticated;
 revoke all on function public.expire_stale_automation_claims()
   from public, anon, authenticated;
-grant execute on function public.claim_due_automation_runs(integer) to service_role;
+grant execute on function public.claim_due_automation_runs(integer, uuid[]) to service_role;
 grant execute on function public.expire_stale_automation_claims() to service_role;
