@@ -2,7 +2,7 @@
 
 A lightweight, multi-workspace CRM for Kydos Digital and the small businesses it supports. Built with Next.js 16, Supabase, Resend and optional integrations for messaging, booking, payments and lead capture.
 
-**Project status: under active development.** The app has many working screens and a deployed backend, but it is **not yet approved for a GoHighLevel (GHL) cutover**. Use the [master build and go-live checklist](https://docs.google.com/spreadsheets/d/1izB6yDJSXxBZ6fgMeHJaoiISw3XKJ68V0ojtlQp0Dj4/edit) as the source of truth for incomplete work and acceptance testing. This README describes what exists in the code, not a guarantee that every integration has passed a live end-to-end test.
+**Project status: under active development.** The app has many working screens and a deployed backend, but it is **not yet approved for a GoHighLevel (GHL) cutover**. Use the shared master build and go-live checklist (request access from the maintainer) as the source of truth for incomplete work and acceptance testing. This README describes what exists in the code, not a guarantee that every integration has passed a live end-to-end test.
 
 ## What the app supports
 
@@ -26,7 +26,7 @@ For a detailed list of open work, consult the shared checklist rather than an ol
 
 ### Prerequisites
 
-- Node.js **22** and npm, matching the GitHub Actions workflow.
+- Node.js **24** and npm, matching the GitHub Actions workflow and Vercel runtime.
 - A Supabase project with Auth, PostgreSQL and Storage.
 - A Resend account and verified sending domain if you need sign-in invitations or email.
 - Optional accounts for Twilio, Meta, Cal.com, Microsoft 365 and Stripe, depending on the features you are testing.
@@ -35,17 +35,18 @@ For a detailed list of open work, consult the shared checklist rather than an ol
 
 ```bash
 npm ci
+npm run lint
 npx next typegen
 npx tsc --noEmit
 npm run build
 npm run dev
 ```
 
-Open the local Next.js URL shown by the dev server. The GitHub CI workflow runs `npm ci`, `npx next typegen` and `npx tsc --noEmit`; Vercel handles deployment builds. A passing type-check is not an integration or user-acceptance test.
+Open the local Next.js URL shown by the dev server. The GitHub CI workflow runs `npm ci`, `npm run lint`, `npx next typegen`, `npx tsc --noEmit` and `npm run build`. Vercel also builds deployment previews. A passing type-check is not an integration or user-acceptance test.
 
 ### Environment variables
 
-Create a local `.env.local` yourself. There is currently no committed `.env.example` in this repository. Use **placeholders** here and put real secrets only in your local environment, deployment secrets or a secrets manager.
+Copy the committed `.env.example` to a local `.env.local` and replace **placeholders** with development or staging values from approved secret stores. Never commit real secret values or customer records.
 
 ```dotenv
 # Core
@@ -67,6 +68,7 @@ TWILIO_AUTH_TOKEN=YOUR_TWILIO_AUTH_TOKEN
 META_PAGE_TOKEN=YOUR_PAGE_TOKEN
 META_APP_SECRET=YOUR_META_APP_SECRET
 META_VERIFY_TOKEN=YOUR_VERIFICATION_TOKEN
+META_CAPI_TOKEN=YOUR_META_CONVERSIONS_API_TOKEN
 WHATSAPP_TOKEN=YOUR_WHATSAPP_TOKEN
 WHATSAPP_PHONE_NUMBER_ID=YOUR_PHONE_NUMBER_ID
 WHATSAPP_WABA_ID=YOUR_BUSINESS_ACCOUNT_ID
@@ -93,7 +95,7 @@ These are configuration names, **not** permission to enable every optional servi
 
 ### Database setup
 
-The database evolved through `supabase/migrations/0001_init.sql` to `0026_client_role.sql`; **0001 alone is no longer sufficient**. For a brand-new, non-production project, review and apply the migrations in order with a migration-aware process, recording which versions were applied.
+The production database has applied migrations through `supabase/migrations/0027_revoke_is_admin_anon.sql`; **0001 alone is no longer sufficient**. Staging additionally holds unmerged migrations that must not be copied blindly to production. For a brand-new, non-production project, review and apply the migrations in order with a migration-aware process, recording which versions were applied.
 
 **Do not blindly rerun SQL migrations in the live database.** In particular, `0003_schedule_automation_runner.sql` contains a deployment-specific cron URL. Check the target environment, Vault secret and schedule before applying it to a fresh project. Only the designated maintainer applies migrations to the live Supabase project.
 
@@ -127,7 +129,7 @@ It runs automation steps, scheduled sends, date triggers, backups, inbox synchro
 
 Verify which schedule is active in the target environment, avoid unintended duplicate jobs, and check execution logs. A successful cron HTTP response does not guarantee every individual message was delivered.
 
-The backup hook attempts private JSON exports between 02:00 and 05:00 London time. It does not yet provide a validated full-database restore. Treat the corresponding checklist items as open until restore tests and completeness checks pass.
+The backup hook attempts a private JSON export once per calendar date, at the first eligible invocation after 02:00 London time within the configured 02:00 to 05:59 window. It does not yet provide a validated full-database restore. Treat the corresponding checklist items as open until restore tests and completeness checks pass.
 
 ## Integrations and webhook endpoints
 
@@ -160,14 +162,14 @@ Some Meta and inbound integrations currently select a single configured workspac
 
 ## Working agreement for contributors
 
-The [Work Split rules](docs/WORKSPLIT.md) and the **Work Split** tab of the shared checklist determine task ownership.
+The [engineering operating model](docs/ENGINEERING_OPERATING_MODEL.md) and [work allocation rules](docs/WORKSPLIT.md) govern code review, responsibilities and release approval. The historic Work Split sheet records former owners but does not restrict the current technical lead.
 
-- ChatGPT contributors work on `chatgpt/KD-xxx-short-name` branches and open a PR for review. Do not push or merge to `main`.
-- Claude owns shared security, messaging, automation, billing and API code, and reviews/merges ChatGPT PRs.
-- New server actions for a self-contained feature belong in its own feature file.
-- Any proposed migration in ChatGPT-owned work starts at `0050`, and Claude alone applies migrations to the live database.
+- ChatGPT is accountable for architecture, integration and engineering across the CRM. Work on isolated feature branches and request independent QA before release.
+- No unapproved production migration, provider send, payment change or customer-impacting deployment.
+- Keep environment secrets, customer information and payment data out of commits and PRs.
+- Apply new, unique, append-only SQL migrations only after staging review and explicit production approval; never reuse a previously applied number.
 - Follow [design notes](docs/DESIGN_NOTES.md), British English and accessible UI conventions.
-- Keep checklist tasks at **In review** until acceptance criteria, CI and required real-world tests have been checked.
+- Mark work Done only after the relevant acceptance criteria and necessary runtime tests have passed.
 
 ## Leaving GoHighLevel
 
