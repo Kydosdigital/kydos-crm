@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { verifyStripe } from "@/lib/stripe";
 import { fireTrigger } from "@/lib/automation";
@@ -14,19 +15,21 @@ export async function POST(req: Request) {
   if (!verifyStripe(raw, req.headers.get("stripe-signature"))) return new Response("Invalid signature", { status: 403 });
   const ev = JSON.parse(raw);
   const db = supabaseAdmin();
-  // Stripe redelivers events. Claim the event id as 'processing' first; mark it 'processed' only after the handler succeeds (KD-163).
+  // Stripe redelivers events. Claim the event id as 'processing' with a fresh token; only the holder of that token may finalise
+  // or release the claim, so a slow worker cannot touch a takeover's claim (KD-163).
   const eventId = String(ev.id);
-  const { error: claimErr } = await db.from("stripe_events").insert({ event_id: eventId, type: String(ev.type), status: "processing" });
+  const token = randomUUID();
+  const { error: claimErr } = await db.from("stripe_events").insert({ event_id: eventId, type: String(ev.type), status: "processing", claim_token: token });
   if (claimErr) {
     if (claimErr.code !== "23505") return new Response("Could not record event", { status: 500 });
     const { data: prior } = await db.from("stripe_events").select("status").eq("event_id", eventId).maybeSingle();
     // Already finished: acknowledge the repeat.
     if (prior?.status === "processed") return new Response("ok");
-    // Still processing: if the claim is stale (an earlier attempt was killed mid-run), take it over atomically. Otherwise ask Stripe to retry later.
+    // Still processing: take over only a stale claim, atomically, with a new token. Otherwise ask Stripe to retry later.
     const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
     const { data: reclaimed } = await db
       .from("stripe_events")
-      .update({ status: "processing", received_at: new Date().toISOString() })
+      .update({ claim_token: token, received_at: new Date().toISOString() })
       .eq("event_id", eventId)
       .eq("status", "processing")
       .lt("received_at", staleBefore)
@@ -35,12 +38,19 @@ export async function POST(req: Request) {
   }
   try {
     const res = await handleEvent(db, ev, eventId);
-    const { error: doneErr } = await db.from("stripe_events").update({ status: "processed" }).eq("event_id", eventId);
+    // Finalise only if this worker still owns the claim. If a takeover replaced it, ask Stripe to retry rather than mark its claim (KD-163).
+    const { data: done, error: doneErr } = await db
+      .from("stripe_events")
+      .update({ status: "processed" })
+      .eq("event_id", eventId)
+      .eq("claim_token", token)
+      .select("event_id");
     if (doneErr) throw doneErr;
+    if (!done || done.length === 0) return new Response("Claim taken over; retry", { status: 500 });
     return res;
   } catch (err) {
-    // Release the claim so Stripe's retry runs the event again instead of being acknowledged as a duplicate (KD-163).
-    await db.from("stripe_events").delete().eq("event_id", eventId);
+    // Release only our own claim, so Stripe's retry runs the event again instead of being acknowledged as a duplicate (KD-163).
+    await db.from("stripe_events").delete().eq("event_id", eventId).eq("claim_token", token);
     throw err;
   }
 }
