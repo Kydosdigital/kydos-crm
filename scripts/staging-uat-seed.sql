@@ -5,6 +5,32 @@
 
 begin;
 
+-- Executable fail-closed environment guard.
+-- This fixture was initialised explicitly on the staging project on 14 Nov 2026.
+-- The exact synthetic workspace UUIDs below are a project-specific sentinel,
+-- not a generic database/project label. A fresh environment MUST be validated
+-- and deliberately re-initialised by the technical lead before using this seed.
+-- No privileged app credentials or customer identifiers are present.
+do $staging_guard$
+begin
+  if (
+    select count(*)
+    from public.workspaces
+    where (id, slug, name) in (
+      ('df55bd02-9862-4d69-aa75-fc5ac67389cb'::uuid, 'kydos-qa-alpha-20261114', 'QA SYNTHETIC Alpha'),
+      ('cdf44e6c-0ba4-40e8-b900-53fc1c1d455b'::uuid, 'kydos-qa-beta-20261114', 'QA SYNTHETIC Beta')
+    )
+      and agent_mode = 'off'
+      and daily_digest = false
+      and email_from is null
+      and sms_from is null
+      and whatsapp_from is null
+  ) <> 2 then
+    raise exception 'STAGING-ONLY SEED REFUSED: expected QA workspace UUID and safety settings not found. Do not use on production.';
+  end if;
+end;
+$staging_guard$;
+
 insert into public.workspaces (name, slug, agent_mode, daily_digest)
 values
   ('QA SYNTHETIC Alpha', 'kydos-qa-alpha-20261114', 'off', false),
@@ -45,6 +71,59 @@ join public.workspaces w on w.slug = f.slug
 where not exists (
   select 1 from public.contacts c where c.workspace_id = w.id and c.email = f.email
 );
+
+-- Assertions run inside the same transaction: failure rolls back all inserts.
+do $fixture_assertions$
+declare
+  qa_workspace record;
+begin
+  for qa_workspace in
+    select id, slug, agent_mode, daily_digest, email_from, sms_from, whatsapp_from
+    from public.workspaces
+    where slug in ('kydos-qa-alpha-20261114', 'kydos-qa-beta-20261114')
+  loop
+    if qa_workspace.agent_mode <> 'off'
+      or qa_workspace.daily_digest is distinct from false
+      or qa_workspace.email_from is not null
+      or qa_workspace.sms_from is not null
+      or qa_workspace.whatsapp_from is not null then
+      raise exception 'Unsafe outbound settings in QA workspace %', qa_workspace.slug;
+    end if;
+    if (select count(*) from public.pipelines p
+        where p.workspace_id = qa_workspace.id and p.name = 'QA Pipeline') <> 1 then
+      raise exception 'QA Pipeline count incorrect for %', qa_workspace.slug;
+    end if;
+    if (select count(*) from public.stages st
+        join public.pipelines p on p.id = st.pipeline_id
+        where st.workspace_id = qa_workspace.id and p.name = 'QA Pipeline'
+          and st.name in ('New', 'Contacted', 'Won')) <> 3 then
+      raise exception 'QA stage count incorrect for %', qa_workspace.slug;
+    end if;
+    if (select count(*) from public.contacts c
+        where c.workspace_id = qa_workspace.id and c.source = 'qa-synthetic-' ||
+          case when qa_workspace.slug = 'kydos-qa-alpha-20261114' then 'alpha' else 'beta' end
+          and c.email like '%@example.test'
+          and c.tags @> array['qa-synthetic']::text[]) <> 2 then
+      raise exception 'Synthetic contact count incorrect for %', qa_workspace.slug;
+    end if;
+  end loop;
+  if (select count(*) from public.workspaces
+      where id in ('df55bd02-9862-4d69-aa75-fc5ac67389cb'::uuid,
+                    'cdf44e6c-0ba4-40e8-b900-53fc1c1d455b'::uuid)) <> 2 then
+    raise exception 'Expected exactly two staging QA workspaces';
+  end if;
+  if (select count(*) from public.contacts
+      where email in ('qa-alpha-optout@example.test', 'qa-beta-optout@example.test')
+        and email_opt_out = true and sms_opt_out = true) <> 2 then
+    raise exception 'QA opt-out flags are not correct';
+  end if;
+  if (select count(*) from public.contacts
+      where email in ('qa-alpha-one@example.test', 'qa-beta-one@example.test')
+        and email_opt_out = false and sms_opt_out = false) <> 2 then
+    raise exception 'QA non-opted-out contact flags are not correct';
+  end if;
+end;
+$fixture_assertions$;
 
 commit;
 
