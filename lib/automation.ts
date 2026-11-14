@@ -127,7 +127,7 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
   } else if (kind === "booking_active" || kind === "no_show" || kind === "attended") {
     const id = run.context?.booking_id as string | undefined;
     if (id) {
-      const { data } = await db.from("bookings").select("status").eq("id", id).maybeSingle();
+      const { data } = await db.from("bookings").select("status").eq("id", id).eq("workspace_id", run.workspace_id).maybeSingle();
       r = kind === "booking_active" ? data?.status === "booked" : data?.status === kind;
     }
   }
@@ -154,7 +154,7 @@ async function advance(run: Run) {
 
   // Booking context (appointment reminders and follow-ups)
   const bookingId = run.context?.booking_id as string | undefined;
-  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).maybeSingle() : { data: null };
+  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).eq("workspace_id", ws.id).maybeSingle() : { data: null };
   const when = booking ? new Date(booking.start_time) : null;
   const fmt = (o: Intl.DateTimeFormatOptions) => (when ? new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", ...o }).format(when) : "");
   const extra: Record<string, string> = {
