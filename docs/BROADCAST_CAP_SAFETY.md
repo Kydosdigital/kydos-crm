@@ -32,6 +32,19 @@ The current branch now:
 
 **Evidence classification:** source-level remediation, followed by CI and preview checks. An actual low PostgREST `max_rows` configuration, smart-list database-error injection and staged fake-provider application test have **not yet** been executed. The PR remains under independent review.
 
+## Scheduler transition race remediation, 14 November 2026
+
+The independent QA lane found that a cancelled-claim update could return no error **and change zero rows**, but the cron worker would still log a successful safety stop. It also found that a failed workspace lookup could leave a job in `sending` indefinitely.
+
+The updated `lib/scheduled.ts` now:
+
+- Checks the scheduled-job claim query for errors and scopes the claim to the scheduled workspace.
+- On a missing or unreadable workspace, attempts a guarded terminal `cancelled` transition, and logs a diagnostic if it cannot confirm the transition.
+- Uses `.select("id").maybeSingle()` when safety-cancelling oversized jobs; an absent affected row is not logged as a successful safety stop.
+- On a completed send, verifies that the `sending -> sent` transition committed before creating a recurring occurrence. If that checkpoint cannot be confirmed after provider side effects, the job is left for manual reconciliation rather than scheduling a new potentially duplicate send.
+
+**Still unverified:** concurrent-cancellation, missing-workspace and fake-provider application tests. The no-send scheduler remains a temporary safety gate until the checkpoint-based sender is accepted.
+
 ## Required acceptance
 
 - For 250 eligible email contacts, direct Send and Schedule requests must both refuse before any provider call or scheduled insert.
