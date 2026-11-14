@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { encrypt, exchangeCode, graphMe } from "@/lib/outlook";
+import { currentRole } from "@/lib/workspace";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -19,6 +20,8 @@ export async function GET(req: Request) {
   if (!user.user) return NextResponse.redirect(new URL("/login", url));
   const { data: ws } = await db.from("workspaces").select("id").eq("id", wsId).maybeSingle(); // RLS: members only
   if (!ws) return back("Workspace not found");
+  const role = await currentRole(ws.id);
+  if (role !== "owner" && role !== "admin" && role !== "member") return back("Only staff can connect a mailbox");
 
   try {
     const t = await exchangeCode(code);

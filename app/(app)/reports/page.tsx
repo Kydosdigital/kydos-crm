@@ -6,7 +6,12 @@ import { Badge, Card, CardTitle, Meter, Page, PageHeader, Segmented, Stat, Table
 
 const ago = (d: number) => new Date(Date.now() - d * 864e5).toISOString();
 const gbp = (n: number) => `£${Math.round(n).toLocaleString("en-GB")}`;
-const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null);
+const median = (values: number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
 const mins = (m: number | null) => (m === null ? "n/a" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} days`);
 const Bar = ({ v, max }: { v: number; max: number }) => <Meter value={v} max={max} />;
 
@@ -99,7 +104,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   };
   const perDay = new Map<string, number>();
   for (const c of contacts) { const k = c.created_at.slice(0, 10); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
-  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
+  const reportNow = new Date();
+  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(reportNow.getTime() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
   const maxDay = Math.max(1, ...series);
   const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * 600},${70 - (v / maxDay) * 60}`).join(" ");
 

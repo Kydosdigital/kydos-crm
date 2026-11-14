@@ -14,7 +14,7 @@ export async function sendMetaEvent(workspaceId: string, contactId: string, even
     const db = supabaseAdmin();
     const { data: ws } = await db.from("workspaces").select("meta_dataset_id").eq("id", workspaceId).single();
     if (!ws?.meta_dataset_id) return;
-    const { data: c } = await db.from("contacts").select("email,phone,first_name,last_name,fbclid,landing_url,created_at").eq("id", contactId).single();
+    const { data: c } = await db.from("contacts").select("email,phone,first_name,last_name,fbclid,landing_url,created_at").eq("id", contactId).eq("workspace_id", workspaceId).single();
     if (!c) return;
     const user_data: Record<string, string[] | string> = {};
     // fbc ties the event back to the exact ad click, which improves match quality a lot

@@ -14,6 +14,12 @@ import { logActivity } from "@/lib/log";
 
 const s = (fd: FormData, k: string) => (String(fd.get(k) ?? "").trim() || null);
 
+/** True only when the contact exists inside the given workspace (KD-049). */
+async function contactInWorkspace(db: Awaited<ReturnType<typeof supabaseServer>>, wsId: string, contactId: string) {
+  const { data } = await db.from("contacts").select("id").eq("id", contactId).eq("workspace_id", wsId).maybeSingle();
+  return !!data;
+}
+
 // ───────── Auth & workspaces ─────────
 export async function login(fd: FormData) {
   const db = await supabaseServer();
@@ -125,9 +131,10 @@ export async function addTag(fd: FormData) {
   const id = String(fd.get("contact_id"));
   const tag = s(fd, "tag");
   if (!tag) return;
-  const { data: c } = await db.from("contacts").select("tags").eq("id", id).single();
+  if (!(await contactInWorkspace(db, ws.id, id))) return;
+  const { data: c } = await db.from("contacts").select("tags").eq("id", id).eq("workspace_id", ws.id).single();
   if (!c || c.tags.includes(tag)) return;
-  await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", id);
+  await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", id).eq("workspace_id", ws.id);
   await fireTrigger(ws.id, id, { type: "tag_added", tag });
   revalidatePath(`/contacts/${id}`);
 }
@@ -136,6 +143,7 @@ export async function addNote(fd: FormData) {
   const { ws } = await requireStaff();
   const db = await supabaseServer();
   const id = String(fd.get("contact_id"));
+  if (!(await contactInWorkspace(db, ws.id, id))) return;
   await db.from("notes").insert({ workspace_id: ws.id, contact_id: id, body: s(fd, "body")! });
   revalidatePath(`/contacts/${id}`);
 }
@@ -145,13 +153,15 @@ export async function addTask(fd: FormData) {
   const db = await supabaseServer();
   const id = String(fd.get("contact_id"));
   const due = s(fd, "due_at");
+  if (!(await contactInWorkspace(db, ws.id, id))) return;
   await db.from("tasks").insert({ workspace_id: ws.id, contact_id: id, title: s(fd, "title")!, due_at: due ? new Date(due).toISOString() : null });
   revalidatePath(`/contacts/${id}`);
 }
 
 export async function toggleTask(fd: FormData) {
+  const { ws } = await requireStaff();
   const db = await supabaseServer();
-  await db.from("tasks").update({ done: fd.get("done") === "true" }).eq("id", String(fd.get("id")));
+  await db.from("tasks").update({ done: fd.get("done") === "true" }).eq("id", String(fd.get("id"))).eq("workspace_id", ws.id);
   revalidatePath(`/contacts/${String(fd.get("contact_id"))}`);
 }
 
@@ -163,7 +173,7 @@ export async function sendMessage(fd: FormData) {
   const channel = String(fd.get("channel")) as "sms" | "email" | "whatsapp" | "outlook" | "messenger" | "instagram";
   const body = s(fd, "body");
   if (!body) return;
-  const { data: c } = await db.from("contacts").select("*").eq("id", id).single();
+  const { data: c } = await db.from("contacts").select("*").eq("id", id).eq("workspace_id", ws.id).single();
   if (!c) return;
   if (channel === "outlook") await sendFromOutlook(ws, c, s(fd, "subject") ?? `Message from ${ws.name}`, body);
   else if (channel === "email") await sendEmail(ws, c, s(fd, "subject") ?? `Message from ${ws.name}`, body);
@@ -180,6 +190,7 @@ export async function createOpportunity(fd: FormData) {
   const db = await supabaseServer();
   const { data: stage } = await db.from("stages").select("id,pipeline_id").eq("id", String(fd.get("stage_id"))).single();
   if (!stage) return;
+  if (!(await contactInWorkspace(db, ws.id, String(fd.get("contact_id"))))) return;
   await db.from("opportunities").insert({
     workspace_id: ws.id,
     contact_id: String(fd.get("contact_id")),
@@ -413,6 +424,7 @@ export async function saveTemplate(fd: FormData) {
   revalidatePath("/templates");
 }
 export async function deleteTemplate(fd: FormData) {
+  await requireStaff();
   const db = await supabaseServer();
   await db.from("email_templates").delete().eq("id", String(fd.get("id")));
   revalidatePath("/templates");
@@ -504,6 +516,7 @@ export async function createDraft(fd: FormData) {
   const db = await supabaseServer();
   const body = s(fd, "body");
   if (!body) return;
+  if (!(await contactInWorkspace(db, ws.id, String(fd.get("contact_id"))))) return;
   await db.from("agent_drafts").insert({
     workspace_id: ws.id, contact_id: String(fd.get("contact_id")), channel: String(fd.get("channel")), subject: s(fd, "subject"), body,
     state: s(fd, "state"), tactic: s(fd, "tactic"), source: "manual", status: "pending",
@@ -649,7 +662,7 @@ export async function callContact(fd: FormData) {
   const { ws } = await requireStaff();
   const db = await supabaseServer();
   const id = String(fd.get("contact_id"));
-  const { data: c } = await db.from("contacts").select("id,phone").eq("id", id).single();
+  const { data: c } = await db.from("contacts").select("id,phone").eq("id", id).eq("workspace_id", ws.id).single();
   let msg = "Call started: your phone will ring first";
   if (!c) msg = "Contact not found";
   else {
@@ -720,7 +733,8 @@ export async function createInvoice(fd: FormData) {
   const kind = fd.get("kind") === "estimate" ? "estimate" : "invoice";
   const { count } = await db.from("invoices").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id);
   const number = `${kind === "estimate" ? "EST" : "INV"}-${String((count ?? 0) + 1).padStart(4, "0")}`;
-  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).single();
+  if (!(await contactInWorkspace(db, ws.id, contactId))) redirect("/invoices?error=" + encodeURIComponent("Contact not found"));
+  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).eq("workspace_id", ws.id).single();
   const row = { workspace_id: ws.id, contact_id: contactId, number, kind, description: s(fd, "description") ?? "Services", amount_gbp: Number(fd.get("amount")) || 0, due_date: s(fd, "due_date") };
   const { data: inv, error } = await db.from("invoices").insert(row).select("id").single();
   if (error || !inv) redirect("/invoices?error=" + encodeURIComponent(error?.message ?? "Could not create"));
@@ -763,7 +777,8 @@ export async function createRetainer(fd: FormData) {
   await requireAdmin();
   const db = await supabaseServer();
   const contactId = String(fd.get("contact_id"));
-  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).single();
+  if (!(await contactInWorkspace(db, ws.id, contactId))) redirect("/retainers?error=" + encodeURIComponent("Contact not found"));
+  const { data: c } = await db.from("contacts").select("email").eq("id", contactId).eq("workspace_id", ws.id).single();
   const row = { workspace_id: ws.id, contact_id: contactId, description: s(fd, "description") ?? "Monthly retainer", amount_gbp: Number(fd.get("amount")) || 0 };
   const { data: r, error } = await db.from("retainers").insert(row).select("id").single();
   if (error || !r) redirect("/retainers?error=" + encodeURIComponent(error?.message ?? "Could not create"));
@@ -810,7 +825,9 @@ export async function syncFacebookNow() {
 // ───────── Proposals ─────────
 export async function createProposal(fd: FormData) {
   const { ws } = await requireStaff();
-  const { error } = await (await supabaseServer()).from("proposals").insert({ workspace_id: ws.id, contact_id: String(fd.get("contact_id")), title: s(fd, "title") ?? "Proposal", body: s(fd, "body") ?? "", amount_gbp: fd.get("amount") ? Number(fd.get("amount")) : null });
+  const db = await supabaseServer();
+  if (!(await contactInWorkspace(db, ws.id, String(fd.get("contact_id"))))) redirect("/proposals?error=" + encodeURIComponent("Contact not found"));
+  const { error } = await db.from("proposals").insert({ workspace_id: ws.id, contact_id: String(fd.get("contact_id")), title: s(fd, "title") ?? "Proposal", body: s(fd, "body") ?? "", amount_gbp: fd.get("amount") ? Number(fd.get("amount")) : null });
   redirect("/proposals" + (error ? `?error=${encodeURIComponent(error.message)}` : ""));
 }
 export async function sendProposal(fd: FormData) {
@@ -897,8 +914,11 @@ export async function bulkEnrol(fd: FormData) {
   const admin = supabaseAdmin();
   const { data: a } = await admin.from("automations").select("id").eq("id", autoId).eq("workspace_id", ws.id).maybeSingle();
   if (!a) redirect("/contacts?error=" + encodeURIComponent("Automation not found"));
+  // Only enrol contacts that belong to this workspace (the admin client bypasses RLS).
+  const { data: owned } = await admin.from("contacts").select("id").eq("workspace_id", ws.id).in("id", list);
+  const ownedIds = (owned ?? []).map((c) => c.id);
   let n = 0;
-  for (const cid of list) {
+  for (const cid of ownedIds) {
     const { data: active } = await admin.from("automation_runs").select("id").eq("automation_id", autoId).eq("contact_id", cid).eq("status", "active").maybeSingle();
     if (!active) { await admin.from("automation_runs").insert({ workspace_id: ws.id, automation_id: autoId, contact_id: cid }); n++; }
   }

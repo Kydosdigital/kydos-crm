@@ -42,12 +42,22 @@ export async function requireWorkspace() {
   return { all, ws: active };
 }
 
-/** The signed-in user's role in the active workspace. */
+/**
+ * The signed-in user's role in the active workspace.
+ * Fails closed: a missing user, missing membership, unknown role or query error
+ * returns "client" (the most restricted role), never an elevated member role.
+ */
 export async function currentRole(wsId: string): Promise<"owner" | "admin" | "member" | "client"> {
+  const FALLBACK = "client" as const;
   const db = await supabaseServer();
-  const { data: u } = await db.auth.getUser();
-  const { data } = await db.from("workspace_members").select("role").eq("workspace_id", wsId).eq("user_id", u.user?.id ?? "").maybeSingle();
-  return (data?.role as "owner" | "admin" | "member" | "client") ?? "member";
+  const { data: u, error: userErr } = await db.auth.getUser();
+  const userId = u?.user?.id;
+  if (userErr || !userId) return FALLBACK;
+  const { data, error } = await db.from("workspace_members").select("role").eq("workspace_id", wsId).eq("user_id", userId).maybeSingle();
+  if (error) return FALLBACK;
+  const role = data?.role;
+  if (role === "owner" || role === "admin" || role === "member" || role === "client") return role;
+  return FALLBACK;
 }
 
 /** Owners and admins only: settings, team, automations, forms, deletions. Members get redirected with a message. */

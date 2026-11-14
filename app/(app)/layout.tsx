@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const db = await supabaseServer();
   const { data: u } = await db.auth.getUser();
   const email = u.user?.email ?? "";
-  const role = active ? await currentRole(active.id) : "member";
+  const role = active ? await currentRole(active.id) : "client";
   const counts: Record<string, number> = {};
   if (active) {
     const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);

@@ -21,7 +21,7 @@ export async function draftFor(ws: Ws, contactId: string, state: State) {
   if (!agentAvailable()) return { ok: false as const, error: "No ANTHROPIC_API_KEY set, agent is paused" };
   const db = supabaseAdmin();
   const [{ data: contact }, { data: kb }, { data: msgs }, { data: events }] = await Promise.all([
-    db.from("contacts").select("*").eq("id", contactId).single(),
+    db.from("contacts").select("*").eq("id", contactId).eq("workspace_id", ws.id).single(),
     db.from("knowledge_items").select("kind,title,body").eq("workspace_id", ws.id).eq("active", true),
     db.from("messages").select("channel,direction,subject,body,status,created_at").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(12),
     db.from("message_events").select("type,url,machine,created_at").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(20),
@@ -59,9 +59,9 @@ Preferred channel: ${channel}. Write the next message.`;
 
 export async function sendDraft(wsRow: Ws, draftId: string) {
   const db = supabaseAdmin();
-  const { data: d } = await db.from("agent_drafts").select("*").eq("id", draftId).single();
+  const { data: d } = await db.from("agent_drafts").select("*").eq("id", draftId).eq("workspace_id", wsRow.id).single();
   if (!d || d.status === "sent") return { ok: false as const, error: "Draft not found or already sent" };
-  const { data: c } = await db.from("contacts").select("*").eq("id", d.contact_id).single();
+  const { data: c } = await db.from("contacts").select("*").eq("id", d.contact_id).eq("workspace_id", wsRow.id).single();
   if (!c) return { ok: false as const, error: "Contact not found" };
   let res: { ok: boolean; error?: string };
   if (d.channel === "email") {
@@ -70,7 +70,7 @@ export async function sendDraft(wsRow: Ws, draftId: string) {
     res = conn ? await sendFromOutlook(wsRow, c, subject, d.body) : await sendEmail(wsRow, c, subject, d.body);
   } else if (d.channel === "whatsapp") res = await sendWhatsAppText(wsRow, c, d.body);
   else res = await sendSms(wsRow, c, d.body);
-  await db.from("agent_drafts").update({ status: res.ok ? "sent" : "failed", error: res.ok ? null : res.error, decided_at: new Date().toISOString() }).eq("id", draftId);
+  await db.from("agent_drafts").update({ status: res.ok ? "sent" : "failed", error: res.ok ? null : res.error, decided_at: new Date().toISOString() }).eq("id", draftId).eq("workspace_id", wsRow.id);
   return res;
 }
 
