@@ -8,7 +8,7 @@ Previously `processDueRuns()` fetched active, due rows using a normal `SELECT` a
 
 ## Change
 
-- Migration `0034_atomic_automation_claims.sql` adds a claim token and lease metadata to `automation_runs`.
+- Migration `0038_atomic_automation_claims.sql` adds a claim token and lease metadata to `automation_runs`.
 - Service-role-only `claim_due_automation_runs` selects eligible active runs using `FOR UPDATE OF r SKIP LOCKED` and atomically assigns a unique ownership token.
 - The runner requests **one run per claim** and excludes IDs already handled in the same invocation; no bulk claiming of jobs that might never be processed before a serverless timeout.
 - Every completion, stop, wait or failure update verifies the worker's claim token before clearing it.
@@ -18,8 +18,8 @@ Previously `processDueRuns()` fetched active, due rows using a normal `SELECT` a
 
 ## Required staging-only testing
 
-1. Validate that `0034` is unused in the current staging migration history. Staging currently has PR #23's six changes corresponding to 0028 through 0033. Do not renumber or overwrite applied migrations.
-2. Apply only the approved new migration to **staging** `psnpdmwkevnxrdrjyiwk`, never production.
+1. Reconcile repository migration order before any deployment: Stripe PR #23 occupies `0028` to `0034`; campaign PR #35 occupies `0035` to `0037`; this atomic-claims migration now uses `0038`. Staging already contains equivalent atomic-claims SQL under the historical provider migration name `kd107_atomic_automation_claims_0034`. Never overwrite or rewrite an applied migration history entry.
+2. Do not reapply this renamed SQL to existing **staging** `psnpdmwkevnxrdrjyiwk`; verify the installed function and columns instead. A disposable fresh test database must apply reviewed migrations in dependency order. Production remains blocked pending explicit approval.
 3. Verify functions exist; confirm `anon` and `authenticated` cannot execute either function, and `service_role` can.
 4. Create a clearly named synthetic `add_tag` automation with one due run and an existing dummy staging contact; do not configure any email/SMS/WhatsApp, external webhook or billing action.
 5. Start two independent database requests for `claim_due_automation_runs(1)` simultaneously. For one due test row, exactly one request may return its ID and token; the second must return no ID.
@@ -31,7 +31,7 @@ Previously `processDueRuns()` fetched active, due rows using a normal `SELECT` a
 
 ## Dependencies and limitations
 
-- Files numbered `0028` to `0033` are currently reserved by draft Stripe PR #23 and already applied on staging. **Migration 0034 is blocked from production** until that stream is resolved and migration history is reconciled.
+- Stripe PR #23 reserves `0028` to `0034` (including `0034_stripe_events_claim_token.sql`), and campaign PR #35 reserves `0035` to `0037`. This file is `0038`, removing the repository filename collision. Existing staging applied migration `kd107_atomic_automation_claims_0034` remains unchanged, so verify schema equivalence rather than reapply. **All production migrations are blocked** until a reviewed rollout order, dependency reconciliation, and founder release approval are recorded.
 - Claude PR #24 (KD-106 failure branching) and PR #26 (KD-114 tenant scope) also change `lib/automation.ts`. Integrate their approved changes into the final branch deliberately. Do not merge conflicting versions in arbitrary order.
 - The claim prevents two concurrent schedulers executing the **same currently claimed step**. It does **not** provide cross-provider exactly-once messaging when the provider accepts a request but acknowledgment is lost. KD-108, KD-109 and provider-level idempotency/outbox tests remain essential.
 - The ten-minute claim lease is longer than the current cron's 60-second maximum execution window. Expiry indicates a stuck or interrupted job; it must be investigated before re-enrolment or retry.
@@ -43,7 +43,7 @@ CI green, migration applied in staging, two-worker claim test, application-level
 
 ## Staging database evidence, 14 November 2026
 
-The technical lead applied `kd107_atomic_automation_claims_0034` **only** to staging Supabase project `psnpdmwkevnxrdrjyiwk`. Production migration history was read-only and unchanged.
+The technical lead previously applied `kd107_atomic_automation_claims_0034` (same SQL now stored as repository `0038_atomic_automation_claims.sql`) **only** to staging Supabase project `psnpdmwkevnxrdrjyiwk`. Production migration history was read-only and unchanged.
 
 Using a disposable `QA KD-107 Atomic Claim` automation with one `add_tag` step and a synthetic Alpha-workspace contact:
 
