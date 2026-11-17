@@ -21,6 +21,12 @@ async function workspace() {
   return data!;
 }
 
+// Failed writes return a generic message. The database error is logged on the server only, so internals never reach the caller.
+function failed(action: string, error: unknown) {
+  console.error(`MCP write failed (${action}):`, error);
+  return text(`Could not ${action}. Nothing was saved. Try again or check the workspace.`);
+}
+
 // The service-role client bypasses RLS, so every contact id from a tool call must be checked against the workspace.
 async function ownsContact(wsId: string, contactId: string) {
   const { data } = await supabaseAdmin().from("contacts").select("id").eq("id", contactId).eq("workspace_id", wsId).maybeSingle();
@@ -86,14 +92,16 @@ function buildServer() {
   server.registerTool("add_note", { description: "Add a note to a contact.", inputSchema: { contact_id: z.string(), body: z.string() } }, async ({ contact_id, body }) => {
     const ws = await workspace();
     if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
-    await db.from("notes").insert({ workspace_id: ws.id, contact_id, body });
+    const { error } = await db.from("notes").insert({ workspace_id: ws.id, contact_id, body });
+    if (error) return failed("save the note", error);
     return text("Saved");
   });
 
   server.registerTool("create_task", { description: "Create a task on a contact, optional ISO due date.", inputSchema: { contact_id: z.string(), title: z.string(), due_at: z.string().optional() } }, async ({ contact_id, title, due_at }) => {
     const ws = await workspace();
     if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
-    await db.from("tasks").insert({ workspace_id: ws.id, contact_id, title, due_at: due_at ? new Date(due_at).toISOString() : null });
+    const { error } = await db.from("tasks").insert({ workspace_id: ws.id, contact_id, title, due_at: due_at ? new Date(due_at).toISOString() : null });
+    if (error) return failed("create the task", error);
     return text("Created");
   });
 
@@ -161,7 +169,8 @@ function buildServer() {
     if (reject_id) { await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id); return text("Rejected"); }
     if (contact_id && channel && body) {
       if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
-      await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" });
+      const { error } = await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" });
+      if (error) return failed("add the draft", error);
       return text("Draft added to queue");
     }
     return text((await db.from("agent_drafts").select("id,contact_id,channel,subject,body,state,hypothesis,source,status,created_at").eq("workspace_id", ws.id).eq("status", "pending").order("created_at", { ascending: false })).data ?? []);
@@ -173,7 +182,8 @@ function buildServer() {
       // Both the automation and the contact must belong to this workspace.
       const { data: auto } = await db.from("automations").select("id").eq("id", automation_id).eq("workspace_id", ws.id).maybeSingle();
       if (!auto || !(await ownsContact(ws.id, enrol_contact_id))) return text("Automation or contact not found");
-      await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id, contact_id: enrol_contact_id });
+      const { error } = await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id, contact_id: enrol_contact_id });
+      if (error) return failed("enrol the contact", error);
       return text("Enrolled");
     }
     const [a, r] = await Promise.all([
