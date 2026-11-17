@@ -105,29 +105,29 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
   const rest = restParts.join(":").trim();
   const since = run.started_at;
   if (kind === "replied") {
-    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
+    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
     r = (count ?? 0) > 0;
   } else if (kind === "opened" || kind === "clicked") {
-    const { count } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
+    const { count } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
     r = (count ?? 0) > 0;
   } else if (kind === "failed") {
-    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
+    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
     r = (count ?? 0) > 0;
   } else if (kind === "tag") r = (contact.tags ?? []).includes(rest);
   else if (kind === "optedout") r = !!contact.email_opt_out;
   else if (kind === "stage") {
-    const { data } = await db.from("opportunities").select("stages(name)").eq("contact_id", contact.id).eq("status", "open");
+    const { data } = await db.from("opportunities").select("stages(name)").eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "open");
     r = (data ?? []).some((o: any) => String(o.stages?.name ?? "").toLowerCase() === rest.toLowerCase());
   } else if (kind === "field") {
     const [k, v] = rest.split("=");
     r = String(contact.custom?.[k?.trim()] ?? "").toLowerCase() === (v ?? "").trim().toLowerCase();
   } else if (kind === "booked") {
-    const { count } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
+    const { count } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
     r = (count ?? 0) > 0;
   } else if (kind === "booking_active" || kind === "no_show" || kind === "attended") {
     const id = run.context?.booking_id as string | undefined;
     if (id) {
-      const { data } = await db.from("bookings").select("status").eq("id", id).maybeSingle();
+      const { data } = await db.from("bookings").select("status").eq("workspace_id", run.workspace_id).eq("id", id).maybeSingle();
       r = kind === "booking_active" ? data?.status === "booked" : data?.status === kind;
     }
   }
@@ -138,7 +138,7 @@ async function advance(run: Run) {
   const db = supabaseAdmin();
   const [{ data: step }, { data: contact }, { data: ws }] = await Promise.all([
     db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("position", run.step_position).maybeSingle(),
-    db.from("contacts").select("*").eq("id", run.contact_id).single(),
+    db.from("contacts").select("*").eq("workspace_id", run.workspace_id).eq("id", run.contact_id).single(),
     db.from("workspaces").select("*").eq("id", run.workspace_id).single(),
   ]);
 
@@ -154,7 +154,7 @@ async function advance(run: Run) {
 
   // Booking context (appointment reminders and follow-ups)
   const bookingId = run.context?.booking_id as string | undefined;
-  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).maybeSingle() : { data: null };
+  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("workspace_id", run.workspace_id).eq("id", bookingId).maybeSingle() : { data: null };
   const when = booking ? new Date(booking.start_time) : null;
   const fmt = (o: Intl.DateTimeFormatOptions) => (when ? new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", ...o }).format(when) : "");
   const extra: Record<string, string> = {
@@ -175,15 +175,15 @@ async function advance(run: Run) {
       await sendSms(ws, contact, render(String(cfg.body ?? ""), contact));
       break;
     case "add_tag":
-      await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id);
+      await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("workspace_id", ws.id).eq("id", contact.id);
       break;
     case "remove_tag":
-      await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id);
+      await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("workspace_id", ws.id).eq("id", contact.id);
       break;
     case "move_stage": {
       const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
       const { data: stage } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
-      if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
+      if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("workspace_id", ws.id).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
       break;
     }
     case "create_task":
@@ -196,7 +196,7 @@ async function advance(run: Run) {
       await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
       break;
     case "create_opportunity": {
-      const { data: open } = await db.from("opportunities").select("id").eq("contact_id", contact.id).eq("status", "open").limit(1);
+      const { data: open } = await db.from("opportunities").select("id").eq("workspace_id", ws.id).eq("contact_id", contact.id).eq("status", "open").limit(1);
       if (open?.length) break;
       const sq = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
       const { data: stage } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
@@ -264,12 +264,12 @@ async function advance(run: Run) {
         const u = users?.users.find((x) => x.email?.toLowerCase() === String(cfg.who).toLowerCase());
         if (u && (mem ?? []).some((m) => m.user_id === u.id)) owner = u.id;
       }
-      if (owner) await db.from("contacts").update({ owner_id: owner }).eq("id", contact.id);
+      if (owner) await db.from("contacts").update({ owner_id: owner }).eq("workspace_id", ws.id).eq("id", contact.id);
       break;
     }
     case "set_field": {
       const custom = { ...(contact.custom ?? {}), [String(cfg.key)]: render(String(cfg.value ?? ""), contact) };
-      await db.from("contacts").update({ custom }).eq("id", contact.id);
+      await db.from("contacts").update({ custom }).eq("workspace_id", ws.id).eq("id", contact.id);
       break;
     }
     case "split": {
@@ -291,6 +291,7 @@ async function advance(run: Run) {
       const { count } = await db
         .from("messages")
         .select("id", { count: "exact", head: true })
+        .eq("workspace_id", run.workspace_id)
         .eq("contact_id", contact.id)
         .eq("direction", "in")
         .gte("created_at", run.started_at);
