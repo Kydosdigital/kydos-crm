@@ -83,7 +83,8 @@ function buildServer() {
     const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).single();
     if (!c) return text("Contact not found");
     if (!c.tags.includes(tag)) {
-      await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id).eq("workspace_id", ws.id);
+      const { error } = await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id).eq("workspace_id", ws.id);
+      if (error) return failed("add the tag", error);
       await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
     }
     return text("Done");
@@ -166,7 +167,11 @@ function buildServer() {
   server.registerTool("agent_drafts", { description: "List pending drafts in the approval queue, or create one (contact_id, channel, body, subject), or approve and send / reject one by id.", inputSchema: { contact_id: z.string().optional(), channel: z.string().optional(), subject: z.string().optional(), body: z.string().optional(), approve_id: z.string().optional(), reject_id: z.string().optional() } }, async ({ contact_id, channel, subject, body, approve_id, reject_id }) => {
     const ws = await workspace();
     if (approve_id) return text(await sendDraft(ws, approve_id));
-    if (reject_id) { await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id); return text("Rejected"); }
+    if (reject_id) {
+      const { data, error } = await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id).eq("status", "pending").select("id").maybeSingle();
+      if (error) return failed("reject the draft", error);
+      return text(data ? "Rejected" : "Pending draft not found");
+    }
     if (contact_id && channel && body) {
       if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
       const { error } = await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" });
