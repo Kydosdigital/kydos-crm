@@ -27,7 +27,7 @@ export default async function MorningActions() {
   const db = await supabaseServer();
   const todayStart = londonMidnight();
   const tomorrowStart = londonMidnight(1);
-  const since = new Date(Date.now() - 7 * 864e5).toISOString();
+  const since = new Date(new Date().getTime() - 7 * 864e5).toISOString();
 
   const [leadResult, outgoingResult, taskResult, missedResult, bookingResult, postResult, invoiceResult] =
     await Promise.all([

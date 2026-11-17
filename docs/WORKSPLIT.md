@@ -1,24 +1,30 @@
-# Work split: ChatGPT (branch) vs Claude (main)
+# Work allocation and engineering ownership
 
-Source of truth: the "Kydos CRM Master Build and Go-Live Checklist" Google Sheet, column I (Owner).
-Owners: `ChatGPT (branch)`, `Claude (main)`, `Stephen`, `Stephen + Claude`.
+**Effective 14 November 2026:** ChatGPT is the accountable technical lead for the entire Kydos CRM, following a product-owner-directed handover from Claude. This document supersedes the earlier Claude-only file ownership split.
 
-## Rules for ChatGPT
-1. Work only on a branch named `chatgpt/KD-xxx-short-name`. Never push to `main`.
-2. Open a pull request per task (or small group). CI must be green (`npm ci`, `npx next typegen`, `npx tsc --noEmit`, build).
-3. Claude reviews and merges. Do not merge your own PRs.
-4. Tasks must be self-contained. If a task needs a change in a shared file, stop and note it in the PR instead.
+The full engineering policy, security and production gates are in [ENGINEERING_OPERATING_MODEL.md](ENGINEERING_OPERATING_MODEL.md). Read it before changing architecture, code, database migrations or deployment settings.
 
-## Off limits (Claude only)
-- `app/actions.ts`, `lib/automation.ts`, `lib/campaign.ts`, `lib/messaging.ts`, `lib/workspace.ts`, `proxy.ts`, `app/api/**`
-- Anything touching auth, roles, RLS, billing or webhooks.
-- New server actions go in a per-feature file, e.g. `app/(app)/<feature>/actions.ts`, using `requireStaff` or `requireAdmin`.
+## Records and handover
 
-## Database
-- Put migrations in `supabase/migrations/` numbered from `0050` upwards. Only Claude applies migrations to the live database.
-- Every new table needs `workspace_id`, RLS enabled, and the standard is_member / is_staff / is_admin policies. Clients stay read-only.
+- Master checklist, acceptance, migration and UAT: https://docs.google.com/spreadsheets/d/1izB6yDJSXxBZ6fgMeHJaoiISw3XKJ68V0ojtlQp0Dj4/edit
+- Original Work Split and Owner values represent historical assignments, not a restriction on the current technical lead's implementation scope. Do **not** rewrite historical ownership without preserving evidence.
+- Claude's handover questions and missing information: https://github.com/Kydosdigital/kydos-crm/issues/28
+- Technical-lead governance upgrade: https://github.com/Kydosdigital/kydos-crm/issues/29
 
-## Other
-- No secrets, keys or real customer data in code, commits or PR text.
-- Follow `docs/DESIGN_NOTES.md`. British spellings, no em dashes.
-- Record evidence (PR link, test notes) in column J of the sheet and set Status to "In review".
+## Build and review
+
+1. All unfinished KD tasks are within ChatGPT's technical planning responsibility, including formerly Claude-owned services, auth, automations, webhooks, integrations, reporting, UI and migrations.
+2. Each implementation change must use an isolated `chatgpt/KD-xxx-name` branch and a PR to `main`, unless a stacked PR names its parent explicitly.
+3. Independent QA reviews critical releases and conflicts. A green TypeScript check is not equivalent to feature acceptance.
+4. Protect production: no untested deployment, live data change, Stripe change, external send or production migration without explicit product-owner approval. Follow staging and rollback gates.
+5. Additive migrations need unique unused numbers and staging verification before any production proposal. As of this takeover, PR #23 holds migration files numbered 0028 to 0033, and its staged changes are not deployed to production.
+6. Update Build Checklist evidence links without falsely advancing Done. Preserve client read-only roles, cross-workspace isolation, no exposed secrets and British English.
+
+## Current operating roles
+
+- **Engineering implementation and integration:** ChatGPT technical lead, with code reviews.
+- **Independent release assurance:** ChatGPT QA lane, separate scheduled run.
+- **Business scope, access, production approvals and cutover:** product owner.
+- **Claude:** handover source, not the ongoing accountable technical lead unless the product owner later delegates specific tasks.
+
+This file intentionally stays concise. Use the operating model for procedures and review gates.

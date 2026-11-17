@@ -104,7 +104,8 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
   };
   const perDay = new Map<string, number>();
   for (const c of contacts) { const k = c.created_at.slice(0, 10); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
-  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
+  const reportNow = new Date();
+  const series = Array.from({ length: days }, (_, i) => perDay.get(new Date(reportNow.getTime() - (days - 1 - i) * 864e5).toISOString().slice(0, 10)) ?? 0);
   const maxDay = Math.max(1, ...series);
   const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * 600},${70 - (v / maxDay) * 60}`).join(" ");
 

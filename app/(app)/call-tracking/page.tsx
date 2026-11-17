@@ -10,7 +10,7 @@ export default async function CallTracking({ searchParams }: { searchParams: Pro
   const { error } = await searchParams;
   const { ws } = await requireAdmin();
   const db = await supabaseServer();
-  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const since = new Date(new Date().getTime() - 30 * 86400000).toISOString();
   const [{ data: nums }, { data: calls }] = await Promise.all([
     db.from("tracking_numbers").select("*").eq("workspace_id", ws.id).order("created_at"),
     db.from("call_logs").select("tracking_label,status").eq("workspace_id", ws.id).eq("direction", "in").gte("created_at", since),
@@ -52,7 +52,7 @@ export default async function CallTracking({ searchParams }: { searchParams: Pro
             <Field label="Campaign"><input name="utm_campaign" placeholder="e.g. spring-offer" className="input" /></Field>
             <button className="btn btn-primary self-start"><Plus aria-hidden />Add number</button>
           </form>
-          <p className="mt-3 text-xs text-muted">In Twilio, set the number's voice webhook (POST) to <code>{app}/api/webhooks/twilio-voice</code>. Calls ring your forwarding number from Settings.</p>
+          <p className="mt-3 text-xs text-muted">In Twilio, set the number&apos;s voice webhook (POST) to <code>{app}/api/webhooks/twilio-voice</code>. Calls ring your forwarding number from Settings.</p>
         </Card>
       </div>
     </Page>
