@@ -27,6 +27,11 @@ function failed(action: string, error: unknown) {
   return text(`Could not ${action}. Nothing was saved. Try again or check the workspace.`);
 }
 
+// Postgres text[] literal, e.g. {"a","b c"}, used as an exact-match filter for compare-and-set updates.
+function pgTextArray(values: string[]) {
+  return `{${values.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+}
+
 // The service-role client bypasses RLS, so every contact id from a tool call must be checked against the workspace.
 async function ownsContact(wsId: string, contactId: string) {
   const { data } = await supabaseAdmin().from("contacts").select("id").eq("id", contactId).eq("workspace_id", wsId).maybeSingle();
@@ -80,14 +85,27 @@ function buildServer() {
 
   server.registerTool("add_tag", { description: "Add a tag to a contact (fires tag automations).", inputSchema: { contact_id: z.string(), tag: z.string() } }, async ({ contact_id, tag }) => {
     const ws = await workspace();
-    const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).single();
-    if (!c) return text("Contact not found");
-    if (!c.tags.includes(tag)) {
-      const { error } = await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id).eq("workspace_id", ws.id);
+    // Compare-and-set: the write only applies if the tags still equal the value we read. A concurrent change
+    // makes the update touch zero rows, so we re-read and retry instead of overwriting the other tag.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).maybeSingle();
+      if (!c) return text("Contact not found");
+      const current: string[] = c.tags ?? [];
+      if (current.includes(tag)) return text("Done");
+      const { data: updated, error } = await db
+        .from("contacts")
+        .update({ tags: [...current, tag] })
+        .eq("id", contact_id)
+        .eq("workspace_id", ws.id)
+        .eq("tags", pgTextArray(current))
+        .select("id");
       if (error) return failed("add the tag", error);
-      await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
+      if (updated && updated.length === 1) {
+        await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
+        return text("Done");
+      }
     }
-    return text("Done");
+    return text("Could not add the tag because the contact changed. Try again.");
   });
 
   server.registerTool("add_note", { description: "Add a note to a contact.", inputSchema: { contact_id: z.string(), body: z.string() } }, async ({ contact_id, body }) => {
