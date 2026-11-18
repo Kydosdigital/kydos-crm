@@ -21,6 +21,23 @@ async function workspace() {
   return data!;
 }
 
+// Failed writes return a generic message. The database error is logged on the server only, so internals never reach the caller.
+function failed(action: string, error: unknown) {
+  console.error(`MCP write failed (${action}):`, error);
+  return text(`Could not ${action}. Nothing was saved. Try again or check the workspace.`);
+}
+
+// Postgres text[] literal, e.g. {"a","b c"}, used as an exact-match filter for compare-and-set updates.
+function pgTextArray(values: string[]) {
+  return `{${values.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+}
+
+// The service-role client bypasses RLS, so every contact id from a tool call must be checked against the workspace.
+async function ownsContact(wsId: string, contactId: string) {
+  const { data } = await supabaseAdmin().from("contacts").select("id").eq("id", contactId).eq("workspace_id", wsId).maybeSingle();
+  return !!data;
+}
+
 function buildServer() {
   const db = supabaseAdmin();
   const server = new McpServer({ name: "kydos-crm", version: "1.0.0" });
@@ -68,24 +85,42 @@ function buildServer() {
 
   server.registerTool("add_tag", { description: "Add a tag to a contact (fires tag automations).", inputSchema: { contact_id: z.string(), tag: z.string() } }, async ({ contact_id, tag }) => {
     const ws = await workspace();
-    const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).single();
-    if (!c) return text("Contact not found");
-    if (!c.tags.includes(tag)) {
-      await db.from("contacts").update({ tags: [...c.tags, tag] }).eq("id", contact_id);
-      await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
+    // Compare-and-set: the write only applies if the tags still equal the value we read. A concurrent change
+    // makes the update touch zero rows, so we re-read and retry instead of overwriting the other tag.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: c } = await db.from("contacts").select("tags").eq("id", contact_id).eq("workspace_id", ws.id).maybeSingle();
+      if (!c) return text("Contact not found");
+      const current: string[] = c.tags ?? [];
+      if (current.includes(tag)) return text("Done");
+      const { data: updated, error } = await db
+        .from("contacts")
+        .update({ tags: [...current, tag] })
+        .eq("id", contact_id)
+        .eq("workspace_id", ws.id)
+        .eq("tags", pgTextArray(current))
+        .select("id");
+      if (error) return failed("add the tag", error);
+      if (updated && updated.length === 1) {
+        await fireTrigger(ws.id, contact_id, { type: "tag_added", tag });
+        return text("Done");
+      }
     }
-    return text("Done");
+    return text("Could not add the tag because the contact changed. Try again.");
   });
 
   server.registerTool("add_note", { description: "Add a note to a contact.", inputSchema: { contact_id: z.string(), body: z.string() } }, async ({ contact_id, body }) => {
     const ws = await workspace();
-    await db.from("notes").insert({ workspace_id: ws.id, contact_id, body });
+    if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
+    const { error } = await db.from("notes").insert({ workspace_id: ws.id, contact_id, body });
+    if (error) return failed("save the note", error);
     return text("Saved");
   });
 
   server.registerTool("create_task", { description: "Create a task on a contact, optional ISO due date.", inputSchema: { contact_id: z.string(), title: z.string(), due_at: z.string().optional() } }, async ({ contact_id, title, due_at }) => {
     const ws = await workspace();
-    await db.from("tasks").insert({ workspace_id: ws.id, contact_id, title, due_at: due_at ? new Date(due_at).toISOString() : null });
+    if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
+    const { error } = await db.from("tasks").insert({ workspace_id: ws.id, contact_id, title, due_at: due_at ? new Date(due_at).toISOString() : null });
+    if (error) return failed("create the task", error);
     return text("Created");
   });
 
@@ -150,15 +185,28 @@ function buildServer() {
   server.registerTool("agent_drafts", { description: "List pending drafts in the approval queue, or create one (contact_id, channel, body, subject), or approve and send / reject one by id.", inputSchema: { contact_id: z.string().optional(), channel: z.string().optional(), subject: z.string().optional(), body: z.string().optional(), approve_id: z.string().optional(), reject_id: z.string().optional() } }, async ({ contact_id, channel, subject, body, approve_id, reject_id }) => {
     const ws = await workspace();
     if (approve_id) return text(await sendDraft(ws, approve_id));
-    if (reject_id) { await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id); return text("Rejected"); }
-    if (contact_id && channel && body) { await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" }); return text("Draft added to queue"); }
+    if (reject_id) {
+      const { data, error } = await db.from("agent_drafts").update({ status: "rejected", decided_at: new Date().toISOString() }).eq("id", reject_id).eq("workspace_id", ws.id).eq("status", "pending").select("id").maybeSingle();
+      if (error) return failed("reject the draft", error);
+      return text(data ? "Rejected" : "Pending draft not found");
+    }
+    if (contact_id && channel && body) {
+      if (!(await ownsContact(ws.id, contact_id))) return text("Contact not found");
+      const { error } = await db.from("agent_drafts").insert({ workspace_id: ws.id, contact_id, channel, subject, body, source: "manual" });
+      if (error) return failed("add the draft", error);
+      return text("Draft added to queue");
+    }
     return text((await db.from("agent_drafts").select("id,contact_id,channel,subject,body,state,hypothesis,source,status,created_at").eq("workspace_id", ws.id).eq("status", "pending").order("created_at", { ascending: false })).data ?? []);
   });
 
   server.registerTool("list_automations", { description: "List automations with run counts, and enrol a contact if enrol_contact_id is given.", inputSchema: { enrol_contact_id: z.string().optional(), automation_id: z.string().optional() } }, async ({ enrol_contact_id, automation_id }) => {
     const ws = await workspace();
     if (enrol_contact_id && automation_id) {
-      await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id, contact_id: enrol_contact_id });
+      // Both the automation and the contact must belong to this workspace.
+      const { data: auto } = await db.from("automations").select("id").eq("id", automation_id).eq("workspace_id", ws.id).maybeSingle();
+      if (!auto || !(await ownsContact(ws.id, enrol_contact_id))) return text("Automation or contact not found");
+      const { error } = await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id, contact_id: enrol_contact_id });
+      if (error) return failed("enrol the contact", error);
       return text("Enrolled");
     }
     const [a, r] = await Promise.all([
