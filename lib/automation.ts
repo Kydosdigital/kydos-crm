@@ -39,32 +39,36 @@ export type TriggerEvent =
 /** Call whenever something happens. Enrols the contact in every matching active automation. */
 export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent, context: Record<string, unknown> = {}) {
   const db = supabaseAdmin();
-  const { data: autos } = await db
+  const { data: autos, error: automationsError } = await db
     .from("automations")
     .select("id, trigger_config")
     .eq("workspace_id", workspaceId)
     .eq("trigger_type", ev.type)
     .eq("active", true);
+  if (automationsError) throw new Error("Unable to load active automation triggers: " + automationsError.message);
   for (const a of autos ?? []) {
     const cfg = (a.trigger_config ?? {}) as Record<string, string>;
     if (ev.type === "tag_added" && cfg.tag && cfg.tag !== ev.tag) continue;
     if (ev.type === "stage_changed" && cfg.stage_id && cfg.stage_id !== ev.stage_id) continue;
     if (ev.type === "form_submitted" && cfg.form && cfg.form !== ev.form) continue;
     // Don't enrol twice in the same automation while a run is still active
-    const { data: existing } = await db
+    const { data: existing, error: existingError } = await db
       .from("automation_runs")
       .select("id")
       .eq("automation_id", a.id)
       .eq("contact_id", contactId)
       .eq("status", "active")
       .maybeSingle();
+    if (existingError) throw new Error("Unable to check active automation runs: " + existingError.message);
     if (existing && !context.booking_id) continue;
     // Noisy triggers: enrol a contact at most once a day per automation
     if (["email_opened", "email_clicked", "reply_received"].includes(ev.type)) {
-      const { data: recent } = await db.from("automation_runs").select("id").eq("automation_id", a.id).eq("contact_id", contactId).gte("started_at", new Date(Date.now() - 864e5).toISOString()).limit(1);
+      const { data: recent, error: recentError } = await db.from("automation_runs").select("id").eq("automation_id", a.id).eq("contact_id", contactId).gte("started_at", new Date(Date.now() - 864e5).toISOString()).limit(1);
+      if (recentError) throw new Error("Unable to check recent automation runs: " + recentError.message);
       if (recent?.length) continue;
     }
-    await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
+    const { error: insertError } = await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
+    if (insertError) throw new Error("Unable to enrol contact in automation: " + insertError.message);
   }
 }
 
