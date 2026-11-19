@@ -190,12 +190,27 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
 
 async function advance(run: Run) {
   const db = supabaseAdmin();
-  const [{ data: step }, { data: contact }, { data: ws }, { data: automation }] = await Promise.all([
+  const [stepResult, contactResult, workspaceResult, automationResult] = await Promise.all([
     db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("workspace_id", run.workspace_id).eq("position", run.step_position).maybeSingle(),
     db.from("contacts").select("*").eq("id", run.contact_id).eq("workspace_id", run.workspace_id).single(),
     db.from("workspaces").select("*").eq("id", run.workspace_id).single(),
     db.from("automations").select("active").eq("id", run.automation_id).eq("workspace_id", run.workspace_id).maybeSingle(),
   ]);
+  // A database error is not evidence that the workflow has finished. Throw so
+  // the claim-owning worker fails the run for manual review instead of marking
+  // it done and silently discarding remaining steps.
+  for (const [source, result] of [
+    ["automation_steps", stepResult],
+    ["contacts", contactResult],
+    ["workspaces", workspaceResult],
+    ["automations", automationResult],
+  ] as const) {
+    if (result.error) throw new Error("Automation lookup failed (" + source + "): " + result.error.message);
+  }
+  const step = stepResult.data;
+  const contact = contactResult.data;
+  const ws = workspaceResult.data;
+  const automation = automationResult.data;
 
   // A paused automation does not execute a new step, even if it was claimed
   // shortly before the operator switched off the workflow.
