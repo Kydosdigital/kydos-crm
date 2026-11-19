@@ -291,18 +291,28 @@ async function advance(run: Run) {
       await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
       break;
     case "create_opportunity": {
-      const { data: open } = await db.from("opportunities").select("id").eq("contact_id", contact.id).eq("status", "open").limit(1);
+      const { data: open, error: openError } = await db.from("opportunities").select("id").eq("workspace_id", ws.id).eq("contact_id", contact.id).eq("status", "open").limit(1);
+      if (openError) throw new Error("Automation opportunity lookup failed: " + openError.message);
       if (open?.length) break;
       const sq = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
-      const { data: stage } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
-      if (stage) await db.from("opportunities").insert({ workspace_id: ws.id, contact_id: contact.id, pipeline_id: stage.pipeline_id, stage_id: stage.id, title: render(String(cfg.title ?? "New opportunity"), contact), value: Number(cfg.value ?? 0) || 0 });
+      const { data: stage, error: stageError } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
+      if (stageError) throw new Error("Automation stage lookup failed: " + stageError.message);
+      if (stage) {
+        const { error: insertError } = await db.from("opportunities").insert({ workspace_id: ws.id, contact_id: contact.id, pipeline_id: stage.pipeline_id, stage_id: stage.id, title: render(String(cfg.title ?? "New opportunity"), contact), value: Number(cfg.value ?? 0) || 0 });
+        if (insertError) throw new Error("Automation opportunity creation failed: " + insertError.message);
+      }
       break;
     }
     case "enrol": {
-      const { data: target } = await db.from("automations").select("id").eq("workspace_id", ws.id).ilike("name", String(cfg.automation ?? "")).maybeSingle();
+      const { data: target, error: targetError } = await db.from("automations").select("id").eq("workspace_id", ws.id).ilike("name", String(cfg.automation ?? "")).maybeSingle();
+      if (targetError) throw new Error("Automation enrolment target lookup failed: " + targetError.message);
       if (target) {
-        const { data: active } = await db.from("automation_runs").select("id").eq("automation_id", target.id).eq("contact_id", contact.id).eq("status", "active").maybeSingle();
-        if (!active) await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id: target.id, contact_id: contact.id });
+        const { data: active, error: activeError } = await db.from("automation_runs").select("id").eq("workspace_id", ws.id).eq("automation_id", target.id).eq("contact_id", contact.id).eq("status", "active").maybeSingle();
+        if (activeError) throw new Error("Automation enrolment deduplication failed: " + activeError.message);
+        if (!active) {
+          const { error: insertError } = await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id: target.id, contact_id: contact.id });
+          if (insertError) throw new Error("Automation enrolment creation failed: " + insertError.message);
+        }
       }
       break;
     }
