@@ -361,18 +361,37 @@ async function advance(run: Run) {
       break;
     }
     case "assign_owner": {
-      const { data: mem } = await db.from("workspace_members").select("user_id").eq("workspace_id", ws.id);
+      const { data: mem, error: membersError } = await db.from("workspace_members")
+        .select("user_id").eq("workspace_id", run.workspace_id);
+      if (membersError) throw new Error("Automation owner membership lookup failed: " + membersError.message);
+      if (!mem?.length) throw new Error("Automation owner assignment failed: no workspace members");
       let owner: string | undefined;
       if (String(cfg.who).toLowerCase() === "round_robin") {
-        // Least-loaded teammate gets the next contact, which rotates fairly over time.
-        const counts = await Promise.all((mem ?? []).map(async (m) => ({ id: m.user_id as string, n: (await db.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("owner_id", m.user_id)).count ?? 0 })));
+        // Never interpret a failed workload lookup as zero, which could
+        // silently assign a contact to the wrong teammate.
+        const counts = await Promise.all(mem.map(async (m) => {
+          const { count, error } = await db.from("contacts")
+            .select("id", { count: "exact", head: true })
+            .eq("workspace_id", run.workspace_id).eq("owner_id", m.user_id);
+          if (error) throw new Error("Automation owner workload lookup failed: " + error.message);
+          return { id: m.user_id as string, n: count ?? 0 };
+        }));
         owner = counts.sort((a, b) => a.n - b.n)[0]?.id;
       } else {
-        const { data: users } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const { data: users, error: usersError } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        if (usersError) throw new Error("Automation owner user lookup failed: " + usersError.message);
         const u = users?.users.find((x) => x.email?.toLowerCase() === String(cfg.who).toLowerCase());
-        if (u && (mem ?? []).some((m) => m.user_id === u.id)) owner = u.id;
+        if (u && mem.some((m) => m.user_id === u.id)) owner = u.id;
       }
-      if (owner) await db.from("contacts").update({ owner_id: owner }).eq("id", contact.id);
+      if (!owner || !mem.some((m) => m.user_id === owner)) {
+        throw new Error("Automation owner assignment failed: no matching workspace member");
+      }
+      const { data: updated, error: updateError } = await db.from("contacts")
+        .update({ owner_id: owner }).eq("id", contact.id)
+        .eq("workspace_id", run.workspace_id).select("id").maybeSingle();
+      if (updateError || !updated) {
+        throw new Error("Automation owner assignment update failed: " + (updateError?.message ?? "contact not found in workspace"));
+      }
       break;
     }
     case "set_field": {
