@@ -259,21 +259,27 @@ async function advance(run: Run) {
     case "send_sms":
       await sendSms(ws, contact, render(String(cfg.body ?? ""), contact));
       break;
-    case "add_tag":
-      await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id);
+    case "add_tag": {
+      const { error } = await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation add_tag failed: " + error.message);
       break;
-    case "remove_tag":
-      await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id);
+    }
+    case "remove_tag": {
+      const { error } = await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation remove_tag failed: " + error.message);
       break;
+    }
     case "move_stage": {
       const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
       const { data: stage } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
       if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
       break;
     }
-    case "create_task":
-      await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+    case "create_task": {
+      const { error } = await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+      if (error) throw new Error("Automation create_task failed: " + error.message);
       break;
+    }
     case "send_whatsapp":
       await sendWhatsAppTemplate(ws, contact, String(cfg.template), ((cfg.vars as unknown as string[]) ?? []).map((v) => render(String(v), contact)), String(cfg.lang ?? "en_GB"));
       break;
