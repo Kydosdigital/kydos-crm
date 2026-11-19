@@ -271,8 +271,12 @@ async function advance(run: Run) {
     }
     case "move_stage": {
       const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
-      const { data: stage } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
-      if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
+      const { data: stage, error: stageError } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
+      if (stageError) throw new Error("Automation move_stage lookup failed: " + stageError.message);
+      if (stage) {
+        const { error } = await db.from("opportunities").update({ stage_id: stage.id }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
+        if (error) throw new Error("Automation move_stage failed: " + error.message);
+      }
       break;
     }
     case "create_task": {
@@ -379,12 +383,13 @@ async function advance(run: Run) {
       break;
     }
     case "stop_if_replied": {
-      const { count } = await db
+      const { count, error } = await db
         .from("messages")
         .select("id", { count: "exact", head: true })
         .eq("contact_id", contact.id)
         .eq("direction", "in")
         .gte("created_at", run.started_at);
+      if (error) throw new Error("Automation stop_if_replied lookup failed: " + error.message);
       if ((count ?? 0) > 0) stop = true;
       break;
     }
