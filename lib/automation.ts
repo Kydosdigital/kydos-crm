@@ -71,7 +71,7 @@ export async function fireTrigger(workspaceId: string, contactId: string, ev: Tr
 /** Atomically claim each due run before executing any external side effect.
  * A worker crash never causes an automatic replay: an expired claim is marked
  * failed for investigation because a provider may already have accepted a send.
- * Migration 0034 must be deployed in staging and tested before deploying this code.
+ * Requires the atomic-claims RPCs from canonical migration 0038. Verify staging schema equivalence before deployment; historical staging migration 0034 must not be reapplied.
  */
 export async function processDueRuns(limit = 50) {
   const db = supabaseAdmin();
