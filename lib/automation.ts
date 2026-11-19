@@ -359,7 +359,8 @@ async function advance(run: Run) {
     }
     case "set_field": {
       const custom = { ...(contact.custom ?? {}), [String(cfg.key)]: render(String(cfg.value ?? ""), contact) };
-      await db.from("contacts").update({ custom }).eq("id", contact.id);
+      const { error } = await db.from("contacts").update({ custom }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation set_field failed: " + error.message);
       break;
     }
     case "split": {
