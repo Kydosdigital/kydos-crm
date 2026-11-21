@@ -53,3 +53,11 @@ test("scanner-safe OTP confirmation fails closed and never exposes provider erro
   assert.ok(!confirm.includes('error.message'));
   assert.ok(!confirm.includes('console.error('));
 });
+
+test("workspace creation server action requires existing admin membership", () => {
+  const actions = read("app/actions.ts");
+  const match = actions.match(/export async function createWorkspace\(fd: FormData\) \{([\s\S]*?)\n\}/);
+  assert.ok(match, "createWorkspace action must exist");
+  assert.match(match[1], /await requireAdmin\(\)/);
+  assert.ok(match[1].indexOf("await requireAdmin()") < match[1].indexOf('db.rpc("create_workspace"'), "authorisation must precede RPC");
+});
