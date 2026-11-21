@@ -13,10 +13,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/signup?error=unavailable", url.origin));
 
   // PKCE verifier remains in the Supabase SSR cookies from signUp.
-  const supabase = await supabaseServer();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error)
+  // A provider outage or malformed code must not become an unhandled 500.
+  // Never log the single-use code, verifier, session or provider response.
+  try {
+    const supabase = await supabaseServer();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error)
+      return NextResponse.redirect(new URL("/login?error=verify", url.origin));
+  } catch {
     return NextResponse.redirect(new URL("/login?error=verify", url.origin));
+  }
 
   return NextResponse.redirect(new URL(destination, url.origin));
 }
