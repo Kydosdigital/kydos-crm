@@ -21,7 +21,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/contacts", label: "Contacts", icon: Users, keywords: "leads people clients" },
       { href: "/pipeline", label: "Pipeline", icon: KanbanSquare, keywords: "deals opportunities stages kanban" },
-      { href: "/onboarding", label: "Client onboarding", icon: ClipboardCheck, keywords: "new client agreement deposit brief access first delivery" },
+      { href: "/client-onboarding", label: "Client onboarding", icon: ClipboardCheck, keywords: "new client agreement deposit brief access first delivery" },
       { href: "/lists", label: "Lists and fields", icon: ListFilter, keywords: "smart lists custom fields segments" },
     ],
   },
