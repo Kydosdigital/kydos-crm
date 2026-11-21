@@ -40,7 +40,8 @@ async function findExistingUser(email: string): Promise<{ id: string } | null | 
 /**
  * Send a link using a workspace the user actually belongs to.
  * An existing user may have several memberships, including a synthetic
- * workspace without an email sender. Prefer a configured workspace.
+ * workspace without an email sender. Prefer a configured member workspace.
+ * Newly registered users without membership use only the platform sender.
  * Invites use the requesting admin's explicit workspace, not a random one.
  */
 export async function sendAuthLink(email: string, kind: LinkKind, inviteWorkspaceId?: string): Promise<SendResult> {
@@ -66,13 +67,29 @@ export async function sendAuthLink(email: string, kind: LinkKind, inviteWorkspac
     if (!existing) return { ok: false, error: "no account" };
     const { data: memberships, error: membershipError } = await db.from("workspace_members")
       .select("workspace_id").eq("user_id", existing.id);
-    if (membershipError || !memberships?.length) return failure("workspace_sender", "membership_missing");
-    const ids = memberships.map(m => m.workspace_id);
-    const { data: workspaces, error: workspacesError } = await db.from("workspaces")
-      .select("id,name,email_from,created_at,brand_color,logo_url,email_signature,business_address,website_url").in("id", ids).order("created_at", { ascending: true });
-    if (workspacesError) return failure("workspace_sender", "workspace_lookup_failed");
-    ws = (workspaces ?? []).find(w => senderReady(w.email_from)) as Workspace | undefined;
-    if (!ws) return failure("workspace_sender", "no_configured_membership_sender");
+    if (membershipError || !memberships) return failure("workspace_sender", "membership_lookup_failed");
+    if (memberships.length) {
+      const ids = memberships.map(m => m.workspace_id);
+      const { data: workspaces, error: workspacesError } = await db.from("workspaces")
+        .select("id,name,email_from,created_at,brand_color,logo_url,email_signature,business_address,website_url")
+        .in("id", ids).order("created_at", { ascending: true });
+      if (workspacesError) return failure("workspace_sender", "workspace_lookup_failed");
+      ws = (workspaces ?? []).find(w => senderReady(w.email_from)) as Workspace | undefined;
+    }
+
+    if (!ws) {
+      // Accounts created by self-service signup may have no workspace yet.
+      // Authentication is a platform service, not a tenant permission:
+      // use the existing platform-owned sender only as an email identity.
+      // Never grant workspace membership, role or workspace data here.
+      const { data: platform, error: platformError } = await db.from("workspaces")
+        .select("id,name,email_from,created_at,brand_color,logo_url,email_signature,business_address,website_url")
+        .eq("slug", "kydos-digital").maybeSingle();
+      if (platformError) return failure("workspace_sender", "platform_lookup_failed");
+      if (platform && senderReady(platform.email_from))
+        ws = platform as Workspace;
+    }
+    if (!ws) return failure("workspace_sender", "no_platform_sender");
   }
 
   const urlBase = process.env.NEXT_PUBLIC_APP_URL;

@@ -38,7 +38,7 @@ export async function getWorkspaces() {
 
 export async function requireWorkspace() {
   const { all, active } = await getWorkspaces();
-  if (!active) redirect("/settings");
+  if (!active) redirect("/onboarding");
   return { all, ws: active };
 }
 
