@@ -43,7 +43,7 @@ export async function updateOnboardingStep(fd: FormData) {
     .eq("workspace_id", ws.id).eq("id", id).eq("done", current.done)
     .select("id").maybeSingle();
   if (error || !data) go("Could not update this step. Refresh and try again", "error");
-  revalidatePath("/onboarding");
+  revalidatePath("/client-onboarding");
   revalidatePath("/tasks");
   go("Checklist updated", "done");
 }
