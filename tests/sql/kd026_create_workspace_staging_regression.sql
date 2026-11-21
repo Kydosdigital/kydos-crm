@@ -42,7 +42,10 @@ SET LOCAL ROLE authenticated;
 DO $unassigned$
 DECLARE
   denied boolean := false;
+  before_count bigint;
+  after_count bigint;
 BEGIN
+  SELECT count(*) INTO before_count FROM public.workspaces;
   IF auth.uid() IS DISTINCT FROM '00000000-0000-4000-8000-000000000026'::uuid THEN
     RAISE EXCEPTION 'FAIL: synthetic authenticated subject not recognised';
   END IF;
@@ -53,6 +56,10 @@ BEGIN
   END;
   IF NOT denied THEN
     RAISE EXCEPTION 'FAIL: unassigned authenticated user created a workspace';
+  END IF;
+  SELECT count(*) INTO after_count FROM public.workspaces;
+  IF after_count <> before_count THEN
+    RAISE EXCEPTION 'FAIL: denied authenticated RPC changed workspace count';
   END IF;
   RAISE NOTICE 'PASS: authenticated unassigned synthetic subject denied';
 END
