@@ -1,0 +1,29 @@
+// Static integration regression for PR #40. Run: node --test tests/auth-onboarding-boundary.test.mjs
+// This is a source-level safety gate, not a substitute for authenticated staging UAT.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const signup = read("app/signup/actions.ts");
+const onboarding = read("app/onboarding/page.tsx");
+
+test("signup never assigns a workspace or role from registration input", () => {
+  assert.match(signup, /supabase\.auth\.signUp\(/);
+  assert.match(signup, /data:\s*\{\s*full_name:\s*name\s*\}/);
+  assert.doesNotMatch(signup, /(?:from\(["']workspace_members["']\)|create_workspace|role:\s*["'](?:owner|admin|member|client)["'])/);
+  assert.match(signup, /new URL\(["']\/auth\/callback\?next=%2Fonboarding["'],\s*base\)/);
+});
+
+test("zero-membership onboarding is authenticated and never requires staff privileges", () => {
+  assert.match(onboarding, /db\.auth\.getUser\(\)/);
+  assert.match(onboarding, /if\s*\(authError\s*\|\|\s*!user\)\s*redirect\(["']\/login["']\)/);
+  assert.match(onboarding, /\.from\(["']workspace_members["']\)[\s\S]*?\.eq\(["']user_id["'],\s*user\.id\)/);
+  assert.match(onboarding, /if\s*\(!error\s*&&\s*data\?\.length\)\s*redirect\(["']\/contacts["']\)/);
+  assert.doesNotMatch(onboarding, /requireStaff\(|requireAdmin\(|create_workspace\(/);
+});
+
+test("membership lookup failure never grants CRM navigation", () => {
+  assert.match(onboarding, /\{error\s*\?\s*\(/);
+  assert.match(onboarding, /couldn&apos;t check your business access/);
+});
