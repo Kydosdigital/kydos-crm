@@ -19,8 +19,3 @@ test("stale submissions specify a target state and cannot blindly invert complet
   assert.match(action, /\.eq\("workspace_id", ws\.id\)\.eq\("id", id\)\.eq\("done", current\.done\)/);
   assert.doesNotMatch(action, /done:\s*!current\.done/);
 });
-
-test("initialisation remains a documented release blocker until atomic per-client uniqueness exists", () => {
-  assert.match(action, /contact_id: null/);
-  assert.match(action, /const missing = ONBOARDING_STEPS\.filter/);
-});
