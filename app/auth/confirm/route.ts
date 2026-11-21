@@ -12,12 +12,33 @@ export async function GET(req: Request) {
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
-// Step 2 (POST): exchange the token for a session, then go to the page asked for.
+// Step 2 (POST): validate the request, exchange the token and require an
+// authenticated session before redirecting. Never expose provider errors.
 export async function POST(req: Request) {
-  const base = () => new URL(req.url).origin;
-  const fd = await req.formData();
-  const db = await supabaseServer();
-  const { error } = await db.auth.verifyOtp({ token_hash: String(fd.get("token_hash")), type: String(fd.get("type")) as EmailOtpType });
-  if (error) return Response.redirect(new URL("/login?error=" + encodeURIComponent("That link has expired or was already used. Request a new one. (" + error.message + ")"), base()), 303);
-  return Response.redirect(new URL(safe(String(fd.get("next")), String(fd.get("type")) === "email" ? "/onboarding" : "/contacts"), base()), 303);
+  const origin = new URL(req.url).origin;
+  const failed = () => Response.redirect(new URL("/login?error=verify", origin), 303);
+  let fd: FormData;
+  try {
+    fd = await req.formData();
+  } catch {
+    return failed();
+  }
+
+  const token_hash = fd.get("token_hash");
+  const type = fd.get("type");
+  if (typeof token_hash !== "string" || !/^[\\w-]{1,2048}$/.test(token_hash))
+    return failed();
+  if (typeof type !== "string" || !["email", "signup", "invite", "magiclink", "recovery"].includes(type))
+    return failed();
+
+  try {
+    const db = await supabaseServer();
+    const { data, error } = await db.auth.verifyOtp({ token_hash, type: type as EmailOtpType });
+    if (error || !data?.session || !data?.user) return failed();
+  } catch {
+    return failed();
+  }
+  const next = fd.get("next");
+  const destination = typeof next === "string" ? safe(next, "/onboarding") : "/onboarding";
+  return Response.redirect(new URL(destination, origin), 303);
 }
