@@ -33,6 +33,33 @@ BEGIN
   RAISE NOTICE 'PASS: RPC grants, guard, no-session denial, no insert';
 END
 $test$;
+-- Exercise the actual authenticated database role, not only a privileged SQL caller.
+-- The synthetic JWT subject is deliberately absent from auth.users and workspace_members.
+-- No Auth rows are inserted. Any unexpected success raises and rolls back the transaction.
+SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000026', true);
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SET LOCAL ROLE authenticated;
+DO $unassigned$
+DECLARE
+  denied boolean := false;
+BEGIN
+  IF auth.uid() IS DISTINCT FROM '00000000-0000-4000-8000-000000000026'::uuid THEN
+    RAISE EXCEPTION 'FAIL: synthetic authenticated subject not recognised';
+  END IF;
+  BEGIN
+    PERFORM public.create_workspace('KD026 unassigned denied', 'kd026-unassigned-denied');
+  EXCEPTION WHEN insufficient_privilege THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'FAIL: unassigned authenticated user created a workspace';
+  END IF;
+  RAISE NOTICE 'PASS: authenticated unassigned synthetic subject denied';
+END
+$unassigned$;
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', '', true);
 ROLLBACK;
 -- Follow-up authenticated staging UAT: owner/admin allowed, client/member/unassigned
 -- denied, cross-workspace isolation, duplicate slug rollback and concurrent attempts.
