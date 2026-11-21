@@ -33,13 +33,18 @@ export async function initialiseOnboarding() {
 export async function updateOnboardingStep(fd: FormData) {
   const { ws } = await requireStaff();
   const id = String(fd.get("id") ?? "");
+  const requested = String(fd.get("done") ?? "");
+  if (requested !== "true" && requested !== "false") return go("Invalid checklist update", "error");
+  const desiredDone = requested === "true";
   const db = await supabaseServer();
   const { data: current, error: readError } = await db.from("tasks")
     .select("title,done").eq("workspace_id", ws.id).eq("id", id).maybeSingle();
   if (readError || !current) return go("Onboarding task not found", "error");
   if (!onboardingTitles.has(current.title)) return go("Onboarding task not found", "error");
+  // A stale or repeated form submission must never undo an already applied change.
+  if (current.done === desiredDone) return go("Checklist already updated", "done");
 
-  const { data, error } = await db.from("tasks").update({ done: !current.done })
+  const { data, error } = await db.from("tasks").update({ done: desiredDone })
     .eq("workspace_id", ws.id).eq("id", id).eq("done", current.done)
     .select("id").maybeSingle();
   if (error || !data) go("Could not update this step. Refresh and try again", "error");
