@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
   const token_hash = fd.get("token_hash");
   const type = fd.get("type");
-  if (typeof token_hash !== "string" || !/^[\\w-]{1,2048}$/.test(token_hash))
+  if (typeof token_hash !== "string" || !/^[\w-]{1,2048}$/.test(token_hash))
     return failed();
   if (typeof type !== "string" || !["email", "signup", "invite", "magiclink", "recovery"].includes(type))
     return failed();
