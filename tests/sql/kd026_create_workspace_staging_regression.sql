@@ -36,16 +36,16 @@ $test$;
 -- Exercise the actual authenticated database role, not only a privileged SQL caller.
 -- The synthetic JWT subject is deliberately absent from auth.users and workspace_members.
 -- No Auth rows are inserted. Any unexpected success raises and rolls back the transaction.
+-- Capture the global count as the privileged runner, outside authenticated RLS.
+CREATE TEMP TABLE kd026_workspace_baseline ON COMMIT DROP AS
+  SELECT count(*)::bigint AS workspace_count FROM public.workspaces;
 SELECT set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-000000000026', true);
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SET LOCAL ROLE authenticated;
 DO $unassigned$
 DECLARE
   denied boolean := false;
-  before_count bigint;
-  after_count bigint;
 BEGIN
-  SELECT count(*) INTO before_count FROM public.workspaces;
   IF auth.uid() IS DISTINCT FROM '00000000-0000-4000-8000-000000000026'::uuid THEN
     RAISE EXCEPTION 'FAIL: synthetic authenticated subject not recognised';
   END IF;
@@ -57,14 +57,20 @@ BEGIN
   IF NOT denied THEN
     RAISE EXCEPTION 'FAIL: unassigned authenticated user created a workspace';
   END IF;
-  SELECT count(*) INTO after_count FROM public.workspaces;
-  IF after_count <> before_count THEN
-    RAISE EXCEPTION 'FAIL: denied authenticated RPC changed workspace count';
-  END IF;
   RAISE NOTICE 'PASS: authenticated unassigned synthetic subject denied';
 END
 $unassigned$;
 RESET ROLE;
+-- Check global mutation only after restoring the privileged runner's RLS visibility.
+DO $verify_global_count$
+BEGIN
+  IF (SELECT count(*) FROM public.workspaces) <>
+     (SELECT workspace_count FROM kd026_workspace_baseline) THEN
+    RAISE EXCEPTION 'FAIL: authenticated denied RPC changed global workspace count';
+  END IF;
+  RAISE NOTICE 'PASS: privileged global workspace count unchanged';
+END
+$verify_global_count$;
 SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT set_config('request.jwt.claim.role', '', true);
 ROLLBACK;
