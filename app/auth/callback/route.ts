@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const next = url.searchParams.get("next");
   const destination = NEXT.has(next ?? "") ? next! : "/onboarding";
 
-  if (!code || code.length > 2048)
+  if (!code || !code.trim() || code !== code.trim() || code.length > 2048)
     return NextResponse.redirect(new URL("/signup?error=unavailable", url.origin));
 
   // PKCE verifier remains in the Supabase SSR cookies from signUp.
@@ -17,8 +17,9 @@ export async function GET(request: NextRequest) {
   // Never log the single-use code, verifier, session or provider response.
   try {
     const supabase = await supabaseServer();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    // A response without a usable session must never be treated as verified.
+    if (error || !data?.session || !data?.user)
       return NextResponse.redirect(new URL("/login?error=verify", url.origin));
   } catch {
     return NextResponse.redirect(new URL("/login?error=verify", url.origin));
