@@ -52,6 +52,7 @@ export default async function Onboarding({
                   </div>
                   {task && <form action={updateOnboardingStep}>
                     <input type="hidden" name="id" value={task.id} />
+                    <input type="hidden" name="done" value={String(!checked)} />
                     <button className="btn btn-secondary btn-sm">{checked ? "Reopen" : "Complete"}</button>
                   </form>}
                 </div>
