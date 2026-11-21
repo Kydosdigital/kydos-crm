@@ -34,7 +34,8 @@ export async function updateOnboardingStep(fd: FormData) {
   const { ws } = await requireStaff();
   const id = String(fd.get("id") ?? "");
   const requested = String(fd.get("done") ?? "");
-  if (requested !== "true" && requested !== "false") return go("Invalid checklist update", "error");
+  const expected = String(fd.get("expectedDone") ?? "");
+  if ((requested !== "true" && requested !== "false") || (expected !== "true" && expected !== "false")) return go("Invalid checklist update", "error");
   const desiredDone = requested === "true";
   const db = await supabaseServer();
   const { data: current, error: readError } = await db.from("tasks")
@@ -42,6 +43,7 @@ export async function updateOnboardingStep(fd: FormData) {
   if (readError || !current) return go("Onboarding task not found", "error");
   if (!onboardingTitles.has(current.title)) return go("Onboarding task not found", "error");
   // A stale or repeated form submission must never undo an already applied change.
+  if (current.done !== (expected === "true")) return go("Checklist changed since you opened it. Refresh and try again", "error");
   if (current.done === desiredDone) return go("Checklist already updated", "done");
 
   const { data, error } = await db.from("tasks").update({ done: desiredDone })
