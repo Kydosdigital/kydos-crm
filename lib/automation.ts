@@ -163,34 +163,34 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
   const rest = restParts.join(":").trim();
   const since = run.started_at;
   if (kind === "replied") {
-    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
+    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
     if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "opened" || kind === "clicked") {
-    const { count, error } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
+    const { count, error } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
     if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "failed") {
-    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
+    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
     if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "tag") r = (contact.tags ?? []).includes(rest);
   else if (kind === "optedout") r = !!contact.email_opt_out;
   else if (kind === "stage") {
-    const { data, error } = await db.from("opportunities").select("stages(name)").eq("contact_id", contact.id).eq("status", "open");
+    const { data, error } = await db.from("opportunities").select("stages(name)").eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "open");
     if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (data ?? []).some((o: any) => String(o.stages?.name ?? "").toLowerCase() === rest.toLowerCase());
   } else if (kind === "field") {
     const [k, v] = rest.split("=");
     r = String(contact.custom?.[k?.trim()] ?? "").toLowerCase() === (v ?? "").trim().toLowerCase();
   } else if (kind === "booked") {
-    const { count, error } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
+    const { count, error } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
     if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "booking_active" || kind === "no_show" || kind === "attended") {
     const id = run.context?.booking_id as string | undefined;
     if (id) {
-      const { data, error } = await db.from("bookings").select("status").eq("id", id).maybeSingle();
+      const { data, error } = await db.from("bookings").select("status").eq("workspace_id", run.workspace_id).eq("id", id).maybeSingle();
       if (error) throw new Error("Automation condition lookup failed: " + error.message);
       r = kind === "booking_active" ? data?.status === "booked" : data?.status === kind;
     }
