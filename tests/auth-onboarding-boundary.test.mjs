@@ -61,3 +61,15 @@ test("workspace creation server action requires existing admin membership", () =
   assert.match(match[1], /await requireAdmin\(\)/);
   assert.ok(match[1].indexOf("await requireAdmin()") < match[1].indexOf('db.rpc("create_workspace"'), "authorisation must precede RPC");
 });
+
+test("database workspace creation independently enforces an existing admin role", () => {
+  const sql = read("supabase/migrations/20261121150000_kd026_create_workspace_admin_guard.sql");
+  assert.match(sql, /CREATE OR REPLACE FUNCTION public\.create_workspace\(p_name text, p_slug text\)/);
+  assert.match(sql, /SECURITY DEFINER/);
+  assert.match(sql, /actor := auth\.uid\(\)/);
+  assert.match(sql, /actor IS NULL OR NOT EXISTS/);
+  assert.match(sql, /wm\.user_id = actor AND wm\.role IN \('owner', 'admin'\)/);
+  assert.match(sql, /ERRCODE = '42501'/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION public\.create_workspace\(text, text\) FROM PUBLIC, anon/);
+  assert.doesNotMatch(sql, /wm\.role IN \([^)]*'client'/);
+});
