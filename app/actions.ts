@@ -66,6 +66,9 @@ export async function logout() {
 }
 
 export async function createWorkspace(fd: FormData) {
+  // Do not let a newly registered, unassigned account create its own tenant.
+  // Database-level EXECUTE grants must also be restricted before release.
+  await requireAdmin();
   const db = await supabaseServer();
   const name = s(fd, "name")!;
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
