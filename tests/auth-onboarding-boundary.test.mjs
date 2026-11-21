@@ -27,3 +27,14 @@ test("membership lookup failure never grants CRM navigation", () => {
   assert.match(onboarding, /\{error\s*\?\s*\(/);
   assert.match(onboarding, /couldn&apos;t check your business access/);
 });
+
+test("PKCE callback fails closed on malformed or failed exchanges", () => {
+  const callback = read("app/auth/callback/route.ts");
+  assert.match(callback, /const NEXT = new Set\(\["\/onboarding", "\/contacts"\]\)/);
+  assert.match(callback, /NEXT\.has\(next \?\? ""\) \? next! : "\/onboarding"/);
+  assert.match(callback, /if \(!code \|\| code\.length > 2048\)/);
+  assert.match(callback, /exchangeCodeForSession\(code\)/);
+  assert.match(callback, /if \(error\)[\s\S]*?\/login\?error=verify/);
+  assert.match(callback, /catch \{[\s\S]*?\/login\?error=verify/);
+  assert.doesNotMatch(callback, /console\.(?:log|error|warn)\(/);
+});
