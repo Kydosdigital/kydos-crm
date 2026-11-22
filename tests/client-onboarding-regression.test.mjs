@@ -29,3 +29,8 @@ test("replayed desired state is idempotent before stale-state rejection", () => 
   assert.ok(idempotent >= 0 && stale >= 0 && idempotent < stale,
     "a retry after a successful update must not be reported as a stale conflict");
 });
+
+test("atomic update rechecks the onboarding title allowlist", () => {
+  assert.match(action, /\.eq\("done", current\.done\)\s*\.in\("title", ONBOARDING_STEPS\.map\(\(step\) => step\.title\)\)/);
+  assert.match(action, /if \(!onboardingTitles\.has\(current\.title\)\)/);
+});
