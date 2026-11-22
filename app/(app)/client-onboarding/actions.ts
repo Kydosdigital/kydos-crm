@@ -17,6 +17,11 @@ export async function initialiseOnboarding() {
     .eq("workspace_id", ws.id).is("contact_id", null)
     .in("title", ONBOARDING_STEPS.map((step) => step.title));
   if (error) go("Could not read onboarding progress", "error");
+  // Contain pre-existing duplicates rather than inserting more rows.
+  // Concurrent first-time requests still require a database-level constraint.
+  const titles = (data ?? []).map((task) => task.title);
+  if (new Set(titles).size !== titles.length)
+    go("Duplicate onboarding steps detected. Ask an administrator to review them", "error");
   const present = new Set((data ?? []).map((task) => task.title));
   const missing = ONBOARDING_STEPS.filter((step) => !present.has(step.title));
   if (missing.length === 0) go("Your checklist is already in place", "done");
