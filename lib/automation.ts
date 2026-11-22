@@ -39,60 +39,118 @@ export type TriggerEvent =
 /** Call whenever something happens. Enrols the contact in every matching active automation. */
 export async function fireTrigger(workspaceId: string, contactId: string, ev: TriggerEvent, context: Record<string, unknown> = {}) {
   const db = supabaseAdmin();
-  const { data: autos } = await db
+  const { data: autos, error: automationsError } = await db
     .from("automations")
     .select("id, trigger_config")
     .eq("workspace_id", workspaceId)
     .eq("trigger_type", ev.type)
     .eq("active", true);
+  if (automationsError) throw new Error("Unable to load active automation triggers: " + automationsError.message);
   for (const a of autos ?? []) {
     const cfg = (a.trigger_config ?? {}) as Record<string, string>;
     if (ev.type === "tag_added" && cfg.tag && cfg.tag !== ev.tag) continue;
     if (ev.type === "stage_changed" && cfg.stage_id && cfg.stage_id !== ev.stage_id) continue;
     if (ev.type === "form_submitted" && cfg.form && cfg.form !== ev.form) continue;
     // Don't enrol twice in the same automation while a run is still active
-    const { data: existing } = await db
+    const { data: existing, error: existingError } = await db
       .from("automation_runs")
       .select("id")
       .eq("automation_id", a.id)
       .eq("contact_id", contactId)
       .eq("status", "active")
       .maybeSingle();
+    if (existingError) throw new Error("Unable to check active automation runs: " + existingError.message);
     if (existing && !context.booking_id) continue;
     // Noisy triggers: enrol a contact at most once a day per automation
     if (["email_opened", "email_clicked", "reply_received"].includes(ev.type)) {
-      const { data: recent } = await db.from("automation_runs").select("id").eq("automation_id", a.id).eq("contact_id", contactId).gte("started_at", new Date(Date.now() - 864e5).toISOString()).limit(1);
+      const { data: recent, error: recentError } = await db.from("automation_runs").select("id").eq("automation_id", a.id).eq("contact_id", contactId).gte("started_at", new Date(Date.now() - 864e5).toISOString()).limit(1);
+      if (recentError) throw new Error("Unable to check recent automation runs: " + recentError.message);
       if (recent?.length) continue;
     }
-    await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
+    const { error: insertError } = await db.from("automation_runs").insert({ workspace_id: workspaceId, automation_id: a.id, contact_id: contactId, context });
+    if (insertError) throw new Error("Unable to enrol contact in automation: " + insertError.message);
   }
 }
 
-/** Processes every due run. Called by the cron route (every minute on Vercel Pro, or every 5 min via any scheduler). */
+/** Atomically claim each due run before executing any external side effect.
+ * A worker crash never causes an automatic replay: an expired claim is marked
+ * failed for investigation because a provider may already have accepted a send.
+ * Requires the atomic-claims RPCs from canonical migration 0038. Verify staging schema equivalence before deployment; historical staging migration 0034 must not be reapplied.
+ */
 export async function processDueRuns(limit = 50) {
   const db = supabaseAdmin();
-  const { data: runs } = await db
-    .from("automation_runs")
-    .select("*")
-    .eq("status", "active")
-    .lte("next_run_at", new Date().toISOString())
-    .order("next_run_at")
-    .limit(limit);
+  const { data: expired, error: expiryError } = await db.rpc("expire_stale_automation_claims");
+  if (expiryError) throw new Error("Unable to quarantine stale automation claims: " + expiryError.message);
+  for (const stale of expired ?? []) {
+    try {
+      await notifyOwner(stale.workspace_id, "Automation claim expired", "Run " + stale.run_id + " requires manual verification before retrying any step.");
+    } catch (error) {
+      console.error("Could not alert owner about expired automation claim", error);
+    }
+  }
 
+  const seen: string[] = [];
   let processed = 0;
-  for (const run of runs ?? []) {
+  // Claim ONE run at a time, so a timeout does not strand a whole 50-run batch.
+  // Exclude already-processed IDs to avoid running multiple steps in one sweep.
+  for (let i = 0; i < Math.min(50, Math.max(0, Math.floor(limit))); i++) {
+    const { data: claimed, error: claimError } = await db.rpc("claim_due_automation_runs", {
+      p_limit: 1,
+      p_exclude_ids: seen,
+    });
+    if (claimError) throw new Error("Unable to claim due automation run: " + claimError.message);
+    const run = (claimed ?? [])[0] as Run | undefined;
+    if (!run) break;
+    if (!run.claim_token) throw new Error("Claimed run missing ownership token: " + run.id);
+    seen.push(run.id);
+
     try {
       await advance(run);
-    } catch (e) {
-      await db.from("automation_runs").update({ status: "failed", last_error: String(e) }).eq("id", run.id);
-      await notifyOwner(run.workspace_id, "Automation run failed", `Run ${run.id} failed: ${String(e)}`);
+    } catch (error) {
+      // Only the owning worker can mark its claim failed; another worker may
+      // already have quarantined an expired lease. Never replay automatically.
+      const { data: failed, error: markError } = await db.from("automation_runs")
+        .update({
+          status: "failed",
+          last_error: String(error).slice(0, 2000),
+          claim_token: null,
+          claim_started_at: null,
+          claim_expires_at: null,
+        })
+        .eq("id", run.id).eq("workspace_id", run.workspace_id)
+        .eq("status", "active").eq("claim_token", run.claim_token)
+        .select("id").maybeSingle();
+      if (markError || !failed) {
+        console.error("Automation claim could not be marked failed, manual review required", run.id, markError);
+      } else {
+        try {
+          await notifyOwner(run.workspace_id, "Automation run failed", "Run " + run.id + " failed: " + String(error));
+        } catch (alertError) {
+          console.error("Could not alert owner about automation failure", alertError);
+        }
+      }
     }
     processed++;
   }
   return processed;
 }
 
-type Run = { id: string; workspace_id: string; automation_id: string; contact_id: string; step_position: number; started_at: string; context: Record<string, unknown> | null; wait_started_at: string | null };
+type Run = {
+  id: string; workspace_id: string; automation_id: string; contact_id: string;
+  step_position: number; started_at: string;
+  context: Record<string, unknown> | null; wait_started_at: string | null;
+  claim_token: string;
+};
+
+/** Persist a step transition only if this worker still owns the atomic claim. */
+async function releaseClaim(run: Run, patch: Record<string, unknown>) {
+  const { data, error } = await supabaseAdmin().from("automation_runs")
+    .update({ ...patch, claim_token: null, claim_started_at: null, claim_expires_at: null })
+    .eq("id", run.id).eq("workspace_id", run.workspace_id)
+    .eq("status", "active").eq("claim_token", run.claim_token)
+    .select("id").maybeSingle();
+  if (error || !data) throw new Error("Claimed automation step could not be committed: " + run.id);
+}
 
 const SSRF = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1)/i;
 
@@ -105,29 +163,35 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
   const rest = restParts.join(":").trim();
   const since = run.started_at;
   if (kind === "replied") {
-    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
+    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "in").gte("created_at", since);
+    if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "opened" || kind === "clicked") {
-    const { count } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
+    const { count, error } = await db.from("message_events").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("type", kind === "opened" ? "opened" : "clicked").eq("machine", false).gte("created_at", since);
+    if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "failed") {
-    const { count } = await db.from("messages").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
+    const { count, error } = await db.from("messages").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("direction", "out").eq("status", "failed").gte("created_at", since);
+    if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "tag") r = (contact.tags ?? []).includes(rest);
   else if (kind === "optedout") r = !!contact.email_opt_out;
   else if (kind === "stage") {
-    const { data } = await db.from("opportunities").select("stages(name)").eq("contact_id", contact.id).eq("status", "open");
+    const { data, error } = await db.from("opportunities").select("stages(name)").eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "open");
+    if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (data ?? []).some((o: any) => String(o.stages?.name ?? "").toLowerCase() === rest.toLowerCase());
   } else if (kind === "field") {
     const [k, v] = rest.split("=");
     r = String(contact.custom?.[k?.trim()] ?? "").toLowerCase() === (v ?? "").trim().toLowerCase();
   } else if (kind === "booked") {
-    const { count } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
+    const { count, error } = await db.from("bookings").select("id", { count: "exact", head: true }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("status", "booked").gte("start_time", new Date().toISOString());
+    if (error) throw new Error("Automation condition lookup failed: " + error.message);
     r = (count ?? 0) > 0;
   } else if (kind === "booking_active" || kind === "no_show" || kind === "attended") {
     const id = run.context?.booking_id as string | undefined;
     if (id) {
-      const { data } = await db.from("bookings").select("status").eq("id", id).maybeSingle();
+      const { data, error } = await db.from("bookings").select("status").eq("workspace_id", run.workspace_id).eq("id", id).maybeSingle();
+      if (error) throw new Error("Automation condition lookup failed: " + error.message);
       r = kind === "booking_active" ? data?.status === "booked" : data?.status === kind;
     }
   }
@@ -136,14 +200,36 @@ async function evalCond(raw: string, run: Run, contact: any): Promise<boolean> {
 
 async function advance(run: Run) {
   const db = supabaseAdmin();
-  const [{ data: step }, { data: contact }, { data: ws }] = await Promise.all([
-    db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("position", run.step_position).maybeSingle(),
-    db.from("contacts").select("*").eq("id", run.contact_id).single(),
+  const [stepResult, contactResult, workspaceResult, automationResult] = await Promise.all([
+    db.from("automation_steps").select("*").eq("automation_id", run.automation_id).eq("workspace_id", run.workspace_id).eq("position", run.step_position).maybeSingle(),
+    db.from("contacts").select("*").eq("id", run.contact_id).eq("workspace_id", run.workspace_id).single(),
     db.from("workspaces").select("*").eq("id", run.workspace_id).single(),
+    db.from("automations").select("active").eq("id", run.automation_id).eq("workspace_id", run.workspace_id).maybeSingle(),
   ]);
+  // A database error is not evidence that the workflow has finished. Throw so
+  // the claim-owning worker fails the run for manual review instead of marking
+  // it done and silently discarding remaining steps.
+  for (const [source, result] of [
+    ["automation_steps", stepResult],
+    ["contacts", contactResult],
+    ["workspaces", workspaceResult],
+    ["automations", automationResult],
+  ] as const) {
+    if (result.error) throw new Error("Automation lookup failed (" + source + "): " + result.error.message);
+  }
+  const step = stepResult.data;
+  const contact = contactResult.data;
+  const ws = workspaceResult.data;
+  const automation = automationResult.data;
 
-  if (!step || !contact || !ws) {
-    await db.from("automation_runs").update({ status: "done" }).eq("id", run.id);
+  // A paused automation does not execute a new step, even if it was claimed
+  // shortly before the operator switched off the workflow.
+  if (automation && !automation.active) {
+    await releaseClaim(run, {});
+    return;
+  }
+  if (!step || !contact || !ws || !automation) {
+    await releaseClaim(run, { status: "done" });
     return;
   }
 
@@ -151,10 +237,13 @@ async function advance(run: Run) {
   let nextAt = new Date();
   let stop = false;
   let jump = 1; // how many step positions to move on (skip_if etc. add more)
+  let clearWaitStart = false;
 
   // Booking context (appointment reminders and follow-ups)
   const bookingId = run.context?.booking_id as string | undefined;
-  const { data: booking } = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).maybeSingle() : { data: null };
+  const bookingResult = bookingId ? await db.from("bookings").select("*").eq("id", bookingId).eq("workspace_id", run.workspace_id).maybeSingle() : { data: null, error: null };
+  if (bookingResult.error) throw new Error("Automation booking context lookup failed: " + bookingResult.error.message);
+  const booking = bookingResult.data;
   const when = booking ? new Date(booking.start_time) : null;
   const fmt = (o: Intl.DateTimeFormatOptions) => (when ? new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", ...o }).format(when) : "");
   const extra: Record<string, string> = {
@@ -174,21 +263,31 @@ async function advance(run: Run) {
     case "send_sms":
       await sendSms(ws, contact, render(String(cfg.body ?? ""), contact));
       break;
-    case "add_tag":
-      await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id);
-      break;
-    case "remove_tag":
-      await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id);
-      break;
-    case "move_stage": {
-      const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
-      const { data: stage } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
-      if (stage) await db.from("opportunities").update({ stage_id: stage.id }).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
+    case "add_tag": {
+      const { error } = await db.from("contacts").update({ tags: Array.from(new Set([...(contact.tags ?? []), String(cfg.tag)])) }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation add_tag failed: " + error.message);
       break;
     }
-    case "create_task":
-      await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+    case "remove_tag": {
+      const { error } = await db.from("contacts").update({ tags: (contact.tags ?? []).filter((t: string) => t !== cfg.tag) }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation remove_tag failed: " + error.message);
       break;
+    }
+    case "move_stage": {
+      const q = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
+      const { data: stage, error: stageError } = await (cfg.stage_id ? q.eq("id", String(cfg.stage_id)) : q.ilike("name", String(cfg.stage ?? ""))).limit(1).maybeSingle();
+      if (stageError) throw new Error("Automation move_stage lookup failed: " + stageError.message);
+      if (stage) {
+        const { error } = await db.from("opportunities").update({ stage_id: stage.id }).eq("workspace_id", run.workspace_id).eq("contact_id", contact.id).eq("pipeline_id", stage.pipeline_id).eq("status", "open");
+        if (error) throw new Error("Automation move_stage failed: " + error.message);
+      }
+      break;
+    }
+    case "create_task": {
+      const { error } = await db.from("tasks").insert({ workspace_id: ws.id, contact_id: contact.id, title: render(String(cfg.title ?? "Follow up"), contact) });
+      if (error) throw new Error("Automation create_task failed: " + error.message);
+      break;
+    }
     case "send_whatsapp":
       await sendWhatsAppTemplate(ws, contact, String(cfg.template), ((cfg.vars as unknown as string[]) ?? []).map((v) => render(String(v), contact)), String(cfg.lang ?? "en_GB"));
       break;
@@ -196,18 +295,28 @@ async function advance(run: Run) {
       await notifyOwner(ws.id, render(String(cfg.subject ?? "Automation notification"), contact), render(String(cfg.body ?? ""), contact) + `\n\nContact: ${[contact.first_name, contact.last_name, contact.email, contact.phone].filter(Boolean).join(", ")}`);
       break;
     case "create_opportunity": {
-      const { data: open } = await db.from("opportunities").select("id").eq("contact_id", contact.id).eq("status", "open").limit(1);
+      const { data: open, error: openError } = await db.from("opportunities").select("id").eq("workspace_id", ws.id).eq("contact_id", contact.id).eq("status", "open").limit(1);
+      if (openError) throw new Error("Automation opportunity lookup failed: " + openError.message);
       if (open?.length) break;
       const sq = db.from("stages").select("id,pipeline_id").eq("workspace_id", ws.id);
-      const { data: stage } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
-      if (stage) await db.from("opportunities").insert({ workspace_id: ws.id, contact_id: contact.id, pipeline_id: stage.pipeline_id, stage_id: stage.id, title: render(String(cfg.title ?? "New opportunity"), contact), value: Number(cfg.value ?? 0) || 0 });
+      const { data: stage, error: stageError } = await (cfg.stage ? sq.ilike("name", String(cfg.stage)) : sq.order("position")).limit(1).maybeSingle();
+      if (stageError) throw new Error("Automation stage lookup failed: " + stageError.message);
+      if (stage) {
+        const { error: insertError } = await db.from("opportunities").insert({ workspace_id: ws.id, contact_id: contact.id, pipeline_id: stage.pipeline_id, stage_id: stage.id, title: render(String(cfg.title ?? "New opportunity"), contact), value: Number(cfg.value ?? 0) || 0 });
+        if (insertError) throw new Error("Automation opportunity creation failed: " + insertError.message);
+      }
       break;
     }
     case "enrol": {
-      const { data: target } = await db.from("automations").select("id").eq("workspace_id", ws.id).ilike("name", String(cfg.automation ?? "")).maybeSingle();
+      const { data: target, error: targetError } = await db.from("automations").select("id").eq("workspace_id", ws.id).ilike("name", String(cfg.automation ?? "")).maybeSingle();
+      if (targetError) throw new Error("Automation enrolment target lookup failed: " + targetError.message);
       if (target) {
-        const { data: active } = await db.from("automation_runs").select("id").eq("automation_id", target.id).eq("contact_id", contact.id).eq("status", "active").maybeSingle();
-        if (!active) await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id: target.id, contact_id: contact.id });
+        const { data: active, error: activeError } = await db.from("automation_runs").select("id").eq("workspace_id", ws.id).eq("automation_id", target.id).eq("contact_id", contact.id).eq("status", "active").maybeSingle();
+        if (activeError) throw new Error("Automation enrolment deduplication failed: " + activeError.message);
+        if (!active) {
+          const { error: insertError } = await db.from("automation_runs").insert({ workspace_id: ws.id, automation_id: target.id, contact_id: contact.id });
+          if (insertError) throw new Error("Automation enrolment creation failed: " + insertError.message);
+        }
       }
       break;
     }
@@ -224,20 +333,19 @@ async function advance(run: Run) {
       break;
     }
     case "end":
-      stop = true;
-      await db.from("automation_runs").update({ status: "done" }).eq("id", run.id);
+      await releaseClaim(run, { status: "done" });
       return;
     case "wait_until": {
       if (await evalCond(String(cfg.cond ?? ""), run, contact)) {
-        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        clearWaitStart = true;
         break; // goal reached, move on
       }
       const started = run.wait_started_at ? new Date(run.wait_started_at) : new Date();
       if (Date.now() - started.getTime() >= Number(cfg.hours ?? 24) * 3600_000) {
-        await db.from("automation_runs").update({ wait_started_at: null }).eq("id", run.id);
+        clearWaitStart = true;
         break; // timed out, move on (a following skip_unless can branch on the goal)
       }
-      await db.from("automation_runs").update({ wait_started_at: started.toISOString(), next_run_at: new Date(Date.now() + 5 * 60_000).toISOString() }).eq("id", run.id);
+      await releaseClaim(run, { wait_started_at: started.toISOString(), next_run_at: new Date(Date.now() + 5 * 60_000).toISOString() });
       return;
     }
     case "wait_before":
@@ -253,23 +361,43 @@ async function advance(run: Run) {
       break;
     }
     case "assign_owner": {
-      const { data: mem } = await db.from("workspace_members").select("user_id").eq("workspace_id", ws.id);
+      const { data: mem, error: membersError } = await db.from("workspace_members")
+        .select("user_id").eq("workspace_id", run.workspace_id);
+      if (membersError) throw new Error("Automation owner membership lookup failed: " + membersError.message);
+      if (!mem?.length) throw new Error("Automation owner assignment failed: no workspace members");
       let owner: string | undefined;
       if (String(cfg.who).toLowerCase() === "round_robin") {
-        // Least-loaded teammate gets the next contact, which rotates fairly over time.
-        const counts = await Promise.all((mem ?? []).map(async (m) => ({ id: m.user_id as string, n: (await db.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", ws.id).eq("owner_id", m.user_id)).count ?? 0 })));
+        // Never interpret a failed workload lookup as zero, which could
+        // silently assign a contact to the wrong teammate.
+        const counts = await Promise.all(mem.map(async (m) => {
+          const { count, error } = await db.from("contacts")
+            .select("id", { count: "exact", head: true })
+            .eq("workspace_id", run.workspace_id).eq("owner_id", m.user_id);
+          if (error) throw new Error("Automation owner workload lookup failed: " + error.message);
+          return { id: m.user_id as string, n: count ?? 0 };
+        }));
         owner = counts.sort((a, b) => a.n - b.n)[0]?.id;
       } else {
-        const { data: users } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const { data: users, error: usersError } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        if (usersError) throw new Error("Automation owner user lookup failed: " + usersError.message);
         const u = users?.users.find((x) => x.email?.toLowerCase() === String(cfg.who).toLowerCase());
-        if (u && (mem ?? []).some((m) => m.user_id === u.id)) owner = u.id;
+        if (u && mem.some((m) => m.user_id === u.id)) owner = u.id;
       }
-      if (owner) await db.from("contacts").update({ owner_id: owner }).eq("id", contact.id);
+      if (!owner || !mem.some((m) => m.user_id === owner)) {
+        throw new Error("Automation owner assignment failed: no matching workspace member");
+      }
+      const { data: updated, error: updateError } = await db.from("contacts")
+        .update({ owner_id: owner }).eq("id", contact.id)
+        .eq("workspace_id", run.workspace_id).select("id").maybeSingle();
+      if (updateError || !updated) {
+        throw new Error("Automation owner assignment update failed: " + (updateError?.message ?? "contact not found in workspace"));
+      }
       break;
     }
     case "set_field": {
       const custom = { ...(contact.custom ?? {}), [String(cfg.key)]: render(String(cfg.value ?? ""), contact) };
-      await db.from("contacts").update({ custom }).eq("id", contact.id);
+      const { error } = await db.from("contacts").update({ custom }).eq("id", contact.id).eq("workspace_id", run.workspace_id);
+      if (error) throw new Error("Automation set_field failed: " + error.message);
       break;
     }
     case "split": {
@@ -288,23 +416,26 @@ async function advance(run: Run) {
       break;
     }
     case "stop_if_replied": {
-      const { count } = await db
+      const { count, error } = await db
         .from("messages")
         .select("id", { count: "exact", head: true })
         .eq("contact_id", contact.id)
+        .eq("workspace_id", run.workspace_id)
         .eq("direction", "in")
         .gte("created_at", run.started_at);
+      if (error) throw new Error("Automation stop_if_replied lookup failed: " + error.message);
       if ((count ?? 0) > 0) stop = true;
       break;
     }
   }
 
   if (stop) {
-    await db.from("automation_runs").update({ status: "stopped" }).eq("id", run.id);
+    await releaseClaim(run, { status: "stopped" });
     return;
   }
-  await db
-    .from("automation_runs")
-    .update({ step_position: run.step_position + jump, next_run_at: nextAt.toISOString() })
-    .eq("id", run.id);
+  await releaseClaim(run, {
+    step_position: run.step_position + jump,
+    next_run_at: nextAt.toISOString(),
+    ...(clearWaitStart ? { wait_started_at: null } : {}),
+  });
 }
