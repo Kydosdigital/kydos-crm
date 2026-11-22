@@ -22,3 +22,10 @@ test("stale submissions specify a target state and cannot blindly invert complet
   assert.match(action, /\.eq\("workspace_id", ws\.id\)\.eq\("id", id\)\.eq\("done", current\.done\)/);
   assert.doesNotMatch(action, /done:\s*!current\.done/);
 });
+
+test("replayed desired state is idempotent before stale-state rejection", () => {
+  const idempotent = action.indexOf('if (current.done === desiredDone) return go("Checklist already updated", "done")');
+  const stale = action.indexOf('if (current.done !== (expected === "true"))');
+  assert.ok(idempotent >= 0 && stale >= 0 && idempotent < stale,
+    "a retry after a successful update must not be reported as a stale conflict");
+});
