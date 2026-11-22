@@ -14,7 +14,8 @@ export async function initialiseOnboarding() {
   const { ws } = await requireStaff();
   const db = await supabaseServer();
   const { data, error } = await db.from("tasks").select("title")
-    .eq("workspace_id", ws.id).in("title", ONBOARDING_STEPS.map((step) => step.title));
+    .eq("workspace_id", ws.id).is("contact_id", null)
+    .in("title", ONBOARDING_STEPS.map((step) => step.title));
   if (error) go("Could not read onboarding progress", "error");
   const present = new Set((data ?? []).map((task) => task.title));
   const missing = ONBOARDING_STEPS.filter((step) => !present.has(step.title));
