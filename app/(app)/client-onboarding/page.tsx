@@ -18,6 +18,8 @@ export default async function Onboarding({
     .eq("workspace_id", ws.id)
     .in("title", ONBOARDING_STEPS.map((s) => s.title))
     .order("created_at", { ascending: true });
+  const titles = (tasks ?? []).map((task) => task.title);
+  const hasDuplicateSteps = new Set(titles).size !== titles.length;
   const byTitle = new Map((tasks ?? []).map((task) => [task.title, task]));
   const completed = ONBOARDING_STEPS.filter((step) => byTitle.get(step.title)?.done).length;
   const started = (tasks ?? []).length > 0;
@@ -33,6 +35,7 @@ export default async function Onboarding({
       {error && <Alert tone="danger">{error}</Alert>}
       {done && <Alert tone="success">{done}</Alert>}
       {queryError && <Alert tone="danger">Could not load onboarding progress. Please retry.</Alert>}
+      {hasDuplicateSteps && <Alert tone="danger">Duplicate onboarding steps detected. Checklist changes are disabled until the duplicates are reviewed.</Alert>}
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_290px]">
         <Card>
@@ -50,7 +53,7 @@ export default async function Onboarding({
                     <p className="text-[13px] font-semibold text-ink">{index + 1}. {step.title.replace("Onboarding: ", "")}</p>
                     <p className="mt-1 text-[13px] leading-relaxed text-muted">{step.description}</p>
                   </div>
-                  {task && <form action={updateOnboardingStep}>
+                  {task && !hasDuplicateSteps && !queryError && <form action={updateOnboardingStep}>
                     <input type="hidden" name="id" value={task.id} />
                     <input type="hidden" name="done" value={String(!checked)} />
                     <input type="hidden" name="expectedDone" value={String(checked)} />
@@ -60,7 +63,7 @@ export default async function Onboarding({
               );
             })}
           </div>
-          {!queryError && (!started || ONBOARDING_STEPS.some((s) => !byTitle.has(s.title))) && (
+          {!queryError && !hasDuplicateSteps && (!started || ONBOARDING_STEPS.some((s) => !byTitle.has(s.title))) && (
             <form action={initialiseOnboarding} className="mt-5 border-t border-line pt-4">
               <button className="btn btn-primary"><Plus aria-hidden />{started ? "Add missing steps" : "Start onboarding"}</button>
             </form>
