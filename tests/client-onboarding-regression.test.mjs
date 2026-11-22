@@ -41,3 +41,8 @@ test("duplicate workspace milestones fail closed rather than silently choosing o
   assert.match(page, /task && !hasDuplicateSteps && !queryError && <form action=\{updateOnboardingStep\}/);
   assert.match(page, /!queryError && !hasDuplicateSteps && \(!started/);
 });
+
+test("workspace checklist view excludes client-linked tasks before duplicate detection", () => {
+  assert.match(page, /\.eq\("workspace_id", ws\.id\)\s*\.is\("contact_id", null\)\s*\.in\("title", ONBOARDING_STEPS/);
+  assert.match(action, /\.eq\("workspace_id", ws\.id\)\.is\("contact_id", null\)/);
+});
