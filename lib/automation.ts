@@ -420,6 +420,7 @@ async function advance(run: Run) {
         .from("messages")
         .select("id", { count: "exact", head: true })
         .eq("contact_id", contact.id)
+        .eq("workspace_id", run.workspace_id)
         .eq("direction", "in")
         .gte("created_at", run.started_at);
       if (error) throw new Error("Automation stop_if_replied lookup failed: " + error.message);
