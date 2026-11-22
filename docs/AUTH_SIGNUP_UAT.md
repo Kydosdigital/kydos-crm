@@ -29,4 +29,14 @@ Replace the old `/signup` request-access form with real Supabase email/password 
 - [ ] Test team admin invites an already registered user into its current workspace. No automatic privileges from a matching email domain alone.
 - [ ] Run browser UAT with actual Supabase Auth identities; do not claim completion from GitHub build alone.
 
-No database schema migration or live Auth setting change is part of this PR. Production Auth configuration and email delivery must be verified before deploying publicly.
+## Database guard deployment dependency (KD-026)
+This PR **includes** `supabase/migrations/20261121150000_kd026_create_workspace_admin_guard.sql`. It replaces the privileged `public.create_workspace(text,text)` function and adjusts its EXECUTE grants. It is a security-sensitive database migration, not a documentation-only or application-only release. The existing staging function remains unguarded until this migration is applied. No production migration is authorised.
+
+Staging deployment order, subject to independent QA review and explicit staging approval:
+1. Record the existing function definition, grants, migration ledger, and workspace/membership counts. Check the migration has not already been applied. Preserve the historical migration ledger, do not mark an unapplied migration as applied.
+2. Review the SQL against the live staging function, including initial pipeline/stage creation, owner/admin eligibility, anonymous denial and existing client/member restrictions. Confirm rollback strategy before deployment: restore the previously captured function definition and grants through a separately reviewed compensating migration if required, not by deleting ledger entries.
+3. Apply the guard **to staging only** through the supported migration mechanism. Verify the new migration ledger entry, `pg_get_functiondef`, grants and absence of unintended workspace/membership changes. Stop on any mismatch.
+4. Use supported Supabase Auth APIs with staging-only credentials to provision synthetic verified identities, never direct `auth.users` inserts. Test unassigned/member/client denial, existing owner/admin permitted creation, cross-workspace isolation, duplicate slug failure and non-mutation on failures. Verify the exact deployed commit and record HTTP/SQL results in the PR and UAT evidence.
+5. Keep production unchanged and GHL live. Require independent QA verdict, accepted staging UAT and separate founder approval before any production migration, Auth setting change or high-risk merge.
+
+Production Auth configuration and email delivery must be verified separately before public signup.
