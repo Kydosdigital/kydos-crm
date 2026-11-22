@@ -1,5 +1,5 @@
 import {
-  Activity, BarChart3, BookOpen, Bot, CalendarDays, CheckSquare, FileSignature, FileText, FormInput, Gauge, Inbox, KanbanSquare,
+  Activity, Clock3, BarChart3, BookOpen, Bot, CalendarDays, CheckSquare, FileSignature, FileText, FormInput, Gauge, Inbox, KanbanSquare,
   LineChart, ListFilter, Megaphone, Plug, Receipt, Repeat, Settings, TextQuote, Users, UsersRound, Workflow, LayoutTemplate, MessageCircle, PhoneCall,
   type LucideIcon,
 } from "lucide-react";
@@ -14,6 +14,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/inbox", label: "Inbox", icon: Inbox, keywords: "messages conversations replies" },
       { href: "/tasks", label: "Tasks", icon: CheckSquare, keywords: "to do follow up" },
+      { href: "/morning", label: "Morning actions", icon: Clock3, keywords: "daily dashboard urgent leads tasks missed calls approvals invoices" },
     ],
   },
   {
