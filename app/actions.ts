@@ -680,7 +680,7 @@ export async function inviteMember(fd: FormData) {
   const role = fd.get("role") === "admin" ? "admin" : fd.get("role") === "client" ? "client" : "member";
   if (!email) redirect("/team?error=Enter an email");
   const admin = supabaseAdmin();
-  const sent = await (await import("@/lib/authmail")).sendAuthLink(email, "invite");
+  const sent = await (await import("@/lib/authmail")).sendAuthLink(email, "invite", ws.id);
   const userId = sent.ok ? sent.userId : undefined;
   if (!userId) redirect("/team?error=" + encodeURIComponent(sent.ok ? "Could not invite that email" : sent.error));
   await admin.from("workspace_members").upsert({ workspace_id: ws.id, user_id: userId, role }, { onConflict: "workspace_id,user_id" });
