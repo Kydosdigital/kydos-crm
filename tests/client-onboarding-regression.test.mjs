@@ -19,7 +19,7 @@ test("stale submissions specify a target state and cannot blindly invert complet
   assert.match(page, /name="expectedDone" value=\{String\(checked\)\}/);
   assert.match(action, /expected !== "true" && expected !== "false"/);
   assert.match(action, /current\.done !== \(expected === "true"\)/);
-  assert.match(action, /\.eq\("workspace_id", ws\.id\)\.eq\("id", id\)\.eq\("done", current\.done\)/);
+  assert.match(action, /\.eq\("workspace_id", ws\.id\)\.eq\("id", id\)\.is\("contact_id", null\)\.eq\("done", current\.done\)/);
   assert.doesNotMatch(action, /done:\s*!current\.done/);
 });
 
