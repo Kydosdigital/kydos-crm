@@ -49,6 +49,7 @@ export async function updateOnboardingStep(fd: FormData) {
 
   const { data, error } = await db.from("tasks").update({ done: desiredDone })
     .eq("workspace_id", ws.id).eq("id", id).eq("done", current.done)
+    .in("title", ONBOARDING_STEPS.map((step) => step.title))
     .select("id").maybeSingle();
   if (error || !data) go("Could not update this step. Refresh and try again", "error");
   revalidatePath("/client-onboarding");
