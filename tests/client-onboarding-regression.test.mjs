@@ -46,3 +46,11 @@ test("workspace checklist view excludes client-linked tasks before duplicate det
   assert.match(page, /\.eq\("workspace_id", ws\.id\)\s*\.is\("contact_id", null\)\s*\.in\("title", ONBOARDING_STEPS/);
   assert.match(action, /\.eq\("workspace_id", ws\.id\)\.is\("contact_id", null\)/);
 });
+
+test("initialisation fails closed when existing workspace milestones are duplicated", () => {
+  assert.match(action, /const titles = \(data \?\? \[\]\)\.map\(\(task\) => task\.title\)/);
+  assert.match(action, /new Set\(titles\)\.size !== titles\.length/);
+  assert.match(action, /Duplicate onboarding steps detected/);
+  assert.ok(action.indexOf("new Set(titles).size !== titles.length") < action.indexOf("db.from(\"tasks\").insert("),
+    "duplicate detection must run before inserting additional milestones");
+});
