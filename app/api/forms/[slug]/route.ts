@@ -93,7 +93,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
 
   if (!isNew && f.custom && Object.keys(f.custom).length) {
     const { data: cur } = await db.from("contacts").select("custom").eq("id", contactId).single();
-    await db.from("contacts").update({ custom: { ...(cur?.custom ?? {}), ...f.custom } }).eq("id", contactId);
+    await db.from("contacts").update({ custom: { ...(cur?.custom ?? {}), ...f.custom } }).eq("workspace_id", ws.id).eq("id", contactId);
   }
   if (f.custom?.message) await db.from("notes").insert({ workspace_id: ws.id, contact_id: contactId, body: `Form "${slug}"${f.page ? ` (${f.page})` : ""}: ${f.custom.message}` });
   if (hf) await db.from("hosted_forms").update({ submissions: (hf.submissions ?? 0) + 1 }).eq("id", hf.id);
