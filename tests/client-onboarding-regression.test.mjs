@@ -34,3 +34,10 @@ test("atomic update rechecks the onboarding title allowlist", () => {
   assert.match(action, /\.eq\("done", current\.done\)\s*\.in\("title", ONBOARDING_STEPS\.map\(\(step\) => step\.title\)\)/);
   assert.match(action, /if \(!onboardingTitles\.has\(current\.title\)\)/);
 });
+
+test("duplicate workspace milestones fail closed rather than silently choosing one", () => {
+  assert.match(page, /new Set\(titles\)\.size !== titles\.length/);
+  assert.match(page, /hasDuplicateSteps && <Alert tone="danger">/);
+  assert.match(page, /task && !hasDuplicateSteps && !queryError && <form action=\{updateOnboardingStep\}/);
+  assert.match(page, /!queryError && !hasDuplicateSteps && \(!started/);
+});
