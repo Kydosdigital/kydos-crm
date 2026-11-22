@@ -16,6 +16,7 @@ export default async function Onboarding({
   const { data: tasks, error: queryError } = await db.from("tasks")
     .select("id,title,done,assigned_to")
     .eq("workspace_id", ws.id)
+    .is("contact_id", null)
     .in("title", ONBOARDING_STEPS.map((s) => s.title))
     .order("created_at", { ascending: true });
   const titles = (tasks ?? []).map((task) => task.title);
