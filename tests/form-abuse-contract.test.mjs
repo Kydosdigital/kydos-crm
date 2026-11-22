@@ -30,3 +30,7 @@ test("email matching escapes SQL LIKE wildcards", () => {
   assert.match(route, /f\.email\.replace\(/);
   assert.match(route, /q\.ilike\("email"/);
 });
+
+test("existing-contact custom-field updates remain workspace scoped", () => {
+  assert.match(route, /\.from\("contacts"\)\.update\(\{ custom:.*?\.eq\("workspace_id", ws\.id\)\.eq\("id", contactId\)/s);
+});
