@@ -34,3 +34,8 @@ test("email matching escapes SQL LIKE wildcards", () => {
 test("existing-contact custom-field updates remain workspace scoped", () => {
   assert.match(route, /\.from\("contacts"\)\.update\(\{ custom:.*?\.eq\("workspace_id", ws\.id\)\.eq\("id", contactId\)/s);
 });
+
+
+test("duplicate contact custom-field read is scoped to the same workspace", () => {
+  assert.match(route, /\.from\("contacts"\)\.select\("custom"\)\.eq\("workspace_id", ws\.id\)\.eq\("id", contactId\)\.single\(\)/);
+});
