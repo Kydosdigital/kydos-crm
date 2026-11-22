@@ -33,6 +33,27 @@ BEGIN
   RAISE NOTICE 'PASS: RPC grants, guard, no-session denial, no insert';
 END
 $test$;
+-- Verify the anonymous database role cannot invoke the SECURITY DEFINER RPC.
+-- This tests actual execution privileges, not merely a metadata lookup.
+SET LOCAL ROLE anon;
+DO $anonymous$
+DECLARE
+  denied boolean := false;
+BEGIN
+  BEGIN
+    PERFORM public.create_workspace('KD026 anonymous denied', 'kd026-anon-denied');
+  EXCEPTION WHEN insufficient_privilege THEN
+    denied := true;
+  END;
+  IF NOT denied THEN
+    RAISE EXCEPTION 'FAIL: anonymous role executed workspace creation';
+  END IF;
+  RAISE NOTICE 'PASS: anonymous role cannot execute workspace creation';
+END
+$anonymous$;
+RESET ROLE;
+-- The privileged global count is checked again after the authenticated scenario.
+
 -- Exercise the actual authenticated database role, not only a privileged SQL caller.
 -- The synthetic JWT subject is deliberately absent from auth.users and workspace_members.
 -- No Auth rows are inserted. Any unexpected success raises and rolls back the transaction.
