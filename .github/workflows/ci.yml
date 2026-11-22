@@ -23,5 +23,7 @@ jobs:
         run: npx next typegen
       - name: TypeScript
         run: npx tsc --noEmit
+      - name: Form abuse contract tests
+        run: node --test tests/form-abuse-contract.test.mjs
       - name: Production build
         run: npm run build
