@@ -92,7 +92,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
   if (!contactId) return Response.json({ error: "Could not save" }, { status: 500, headers: cors });
 
   if (!isNew && f.custom && Object.keys(f.custom).length) {
-    const { data: cur } = await db.from("contacts").select("custom").eq("id", contactId).single();
+    const { data: cur } = await db.from("contacts").select("custom").eq("workspace_id", ws.id).eq("id", contactId).single();
     await db.from("contacts").update({ custom: { ...(cur?.custom ?? {}), ...f.custom } }).eq("workspace_id", ws.id).eq("id", contactId);
   }
   if (f.custom?.message) await db.from("notes").insert({ workspace_id: ws.id, contact_id: contactId, body: `Form "${slug}"${f.page ? ` (${f.page})` : ""}: ${f.custom.message}` });
