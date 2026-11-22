@@ -43,8 +43,9 @@ export async function updateOnboardingStep(fd: FormData) {
   if (readError || !current) return go("Onboarding task not found", "error");
   if (!onboardingTitles.has(current.title)) return go("Onboarding task not found", "error");
   // A stale or repeated form submission must never undo an already applied change.
-  if (current.done !== (expected === "true")) return go("Checklist changed since you opened it. Refresh and try again", "error");
+  // A retried submission that has already reached its requested state is harmless.
   if (current.done === desiredDone) return go("Checklist already updated", "done");
+  if (current.done !== (expected === "true")) return go("Checklist changed since you opened it. Refresh and try again", "error");
 
   const { data, error } = await db.from("tasks").update({ done: desiredDone })
     .eq("workspace_id", ws.id).eq("id", id).eq("done", current.done)
